@@ -40,33 +40,6 @@ namespace cv
 	}
 }
 
-/** The expected extension for calibration files. */
-static const std::string CALIB_FILE_EXTENSION = ".xml";
-/** The expected name of file with left camera intrinsics. */
-static const std::string LEFT_CALIB_FILE = "left";
-/** The expected name of file with right camera intrinsics. */
-static const std::string RIGHT_CALIB_FILE = "right";
-/** The expected name of file with stereo camera extrinsic. */
-static const std::string STEREO_CALIB_FILE = "stereo";
-/** The name of the node in XML file with camera matrix. */
-static const std::string CAMERA_MATRIX = "CameraMatrix";
-/** The name of the node in XML file with distortion parameters. */
-static const std::string DISTORTION = "Distortion";
-/** The name of the node in XML file with right camera rotation */
-static const std::string ROTATION = "R";
-/** The name of the node in XML file with right camera translation */
-static const std::string TRANSLATION = "T";
-/** The name of the node in XML file with left camera rectification rotation */
-static const std::string RECTIFICATION_LEFT = "R1";
-/** The name of the node in XML file with right camera rectification rotation */
-static const std::string RECTIFICATION_RIGHT = "R2";
-/** The name of the node in XML file with new left camera matrix. */
-static const std::string NEW_CAM_MATRIX_LEFT = "P1";
-/** The name of the node in XML file with new right camera matrix. */
-static const std::string NEW_CAM_MATRIX_RIGHT = "P2";
-/** The name of the node in XML file with disparity to depth parameters. */
-static const std::string DISPARITY_TO_DEPTH = "Q";
-
 /**
  * This class wraps two CSI cameras to treat them as a stereo rig. It provides
  * software synchronisation which minimises the risk of out of sync frames,

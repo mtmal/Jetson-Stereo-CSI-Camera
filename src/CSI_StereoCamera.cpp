@@ -23,6 +23,7 @@
 #include <opencv2/cudastereo.hpp>
 #include <opencv2/ximgproc/disparity_filter.hpp>
 #include <opencv2/cudafilters.hpp>
+#include "CameraConstants.h"
 #include "CSI_StereoCamera.h"
 
 namespace
