@@ -14,13 +14,15 @@ The aim of this project is to perform as much stereo processing using OpenCV CUD
 ## Setup
 Default build without internal logging
 ```
-$ make
+$ mkdir build
+$ cd build
+$ cmake ..
+$ make -j 3
 $ ./test_CSI_Stereo
 ```
-Build with internal logging
+To build with additional logging, pass -DLOG=1 to cmake like:
 ```
-$ CXX_FLAGS=-DLOG=1 make
-$ ./test_CSI_Stereo
+$ cmake .. -DLOG=1
 ```
 ## Usage
 After building there is a library which can be used in any project, and a test application. The test application allows to play around with disparity map parameters as well as allows to enable/disable disparity map filter. Median filter is still applied (see [Discussion](#discussion)). When running the test application, pressing space bar pauses image capturing and saves left, right, and disparity images to files (fixed name - will be overriden).

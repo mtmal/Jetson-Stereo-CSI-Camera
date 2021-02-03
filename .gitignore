@@ -1,4 +1,2 @@
 .*
-*.png
-libCSI_Stereo.so
-test_CSI_Stereo
+build
