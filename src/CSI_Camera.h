@@ -27,6 +27,7 @@
 #include <pthread.h>
 #include <opencv2/core/cuda.hpp>
 #include <opencv2/videoio.hpp>
+#include <vpi/Stream.h>
 
 /**
  * This class provides communication with CSI camera via OpenCV.
@@ -93,15 +94,15 @@ public:
      * to maximise chances of having them synchronised by software.
      *  @return the timestamp associated with the image or -1 if there was an error.
      */
-    inline double acquireGreyScale()
-    {
-    	return getGreyscale(mGrey);
-    }
+    double acquireGreyScale();
+
+    double acquireRectified();
 
     /**
      * Performs image rectification on internal greyscale buffer.
+     *  @param[out] optional CPU buffer for rectified image.
      */
-    void rectifyImage();
+    void rectifyImage(cv::Mat* rectified = nullptr);
 
     /**
      * Sets the two rectification maps.
@@ -110,29 +111,35 @@ public:
      */
     void setRMap(const cv::Mat& xmap, const cv::Mat& ymap);
 
-    /**
-     *  @return the read-only access to the latest raw RGB image.
-     */
-    constexpr const cv::cuda::GpuMat& getImg() const
-    {
-        return mImg;
-    }
+    void initialiseVPIRemap(const cv::Mat& camMat, const cv::Mat& newCamMat, const cv::Mat& dist,
+    		const cv::Mat& R = cv::Mat::eye(3, 3, CV_64F), const cv::Mat& T = cv::Mat::zeros(3, 1, CV_64F));
 
-    /**
-     *  @return the read-only access to the latest raw grey-scale image.
-     */
-    constexpr const cv::cuda::GpuMat& getGreyImg() const
-    {
-        return mGrey;
-    }
+//    /**
+//     *  @return the read-only access to the latest raw RGB image.
+//     */
+//    constexpr const cv::cuda::GpuMat& getImg() const
+//    {
+//        return mImg;
+//    }
+//
+//    /**
+//     *  @return the read-only access to the latest raw grey-scale image.
+//     */
+//    constexpr const cv::cuda::GpuMat& getGreyImg() const
+//    {
+//        return mGrey;
+//    }
+//
+//    /**
+//     *  @return the read-only access to the latest rectified grey-scale image.
+//     */
+//    constexpr const cv::cuda::GpuMat& getRectImg() const
+//    {
+//        return mRectified;
+//    }
 
-    /**
-     *  @return the read-only access to the latest rectified grey-scale image.
-     */
-    constexpr const cv::cuda::GpuMat& getRectImg() const
-    {
-        return mRectified;
-    }
+    void getRectified(cv::Mat& mat);
+    void getFiltered(cv::Mat& mat);
 
     /**
      * This is somewhat hard-coded for a specific camera. Provides image size and framerate for given mode.
@@ -141,6 +148,22 @@ public:
      *  @return the framerate for given mode in Hz.
      */
     static uint8_t getSizeForMode(const uint8_t mode, cv::Size& size);
+
+    constexpr VPIStream getStream() const
+    {
+    	return mStream;
+    }
+
+    constexpr VPIImage getFiltered() const
+    {
+    	return mVPIFiltered;
+    }
+
+    constexpr VPIImage getFiltered16() const
+    {
+    	return mVPIFiltered16;
+    }
+
 
 protected:
     /**
@@ -165,6 +188,7 @@ private:
 
     /** ID of this camera. */
     uint8_t mID;
+    cv::Size mImgSize;
     /** Flag that indicates if the thread should be running or not. */
     std::atomic<bool> mThreadRun;
     /** Thread which pulls images from CSI camera. */
@@ -173,15 +197,24 @@ private:
     double mFrameTime;
     /** OpenCV wrapper which allows communication with CSI camera. */
     cv::VideoCapture mCapture;
-    /** Preallocated buffer on GPU for raw RGB image. */
-    cv::cuda::GpuMat mImg;
+//    /** Preallocated buffer on GPU for raw RGB image. */
+//    cv::cuda::GpuMat mImg;
     /** Preallocated buffer on GPU for raw greyscale image. */
-    cv::cuda::GpuMat mGrey;
+//    cv::cuda::GpuMat mGrey;
     /** Preallocated buffer on GPU for rectified greyscale image. */
     cv::cuda::GpuMat mRectified;
     /** Preallocated buffers for image rectification maps. */
     cv::cuda::GpuMat mRMap[2];
     /** Mutex for synchronous access to data from the camera. */
     mutable pthread_mutex_t mMutex;
+
+    VPIStream mStream;
+    VPIPayload mWarp;
+    VPIImage mVPIColour;
+    VPIImage mVPIGrey;
+    VPIImage mVPIRectified;
+    VPIImage mVPIResized;
+    VPIImage mVPIFiltered;
+    VPIImage mVPIFiltered16;
 };
 #endif // __CSI_CAMERA_H__

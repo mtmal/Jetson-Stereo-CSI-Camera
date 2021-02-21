@@ -23,6 +23,11 @@
 #include <opencv2/cudastereo.hpp>
 #include <opencv2/ximgproc/disparity_filter.hpp>
 #include <opencv2/cudafilters.hpp>
+#include <vpi/algo/ConvertImageFormat.h>
+#include <vpi/algo/StereoDisparity.h>
+#include <vpi/Event.h>
+#include <vpi/Image.h>
+#include <vpi/OpenCVInterop.hpp>
 #include "CameraConstants.h"
 #include "CSI_StereoCamera.h"
 
@@ -57,16 +62,31 @@ void scaleCameraMatrix(const cv::Size& imgSize, const cv::Size& maxSize, cv::Mat
 
 CSI_StereoCamera::CSI_StereoCamera(const cv::Size& imageSize)
 : mLCam(imageSize), mRCam(imageSize), mDisparity(imageSize, CV_8UC1), mLeftGPU(imageSize, CV_8UC1),
-  mRightGPU(imageSize, CV_8UC1), mLeftCPU(imageSize, CV_8UC1), mDisparityCPU(imageSize, CV_8UC1),
-  mDisparityRLCPU(imageSize, CV_8UC1), mMedianFilter(cv::cuda::createMedianFilter(CV_8UC1, 9)),
+  mRightGPU(imageSize, CV_8UC1), mLeftCPU(imageSize, CV_8UC1), mDisparityCPU(imageSize, CV_16UC1),
+  mDisparityRLCPU(imageSize, CV_16UC1), mMedianFilter(cv::cuda::createMedianFilter(CV_8UC1, 9)),
   mStereoBM(cv::cuda::createStereoBM(160))
 {
+	const VPIStereoDisparityEstimatorCreationParams stereoParams = {32};
 	mStereoBM->setPreFilterType(1);
 	restartDispFilter(8000.0, 2.0);
+	vpiEventCreate(0, &mSyncEvent);
+
+	vpiCreateStereoDisparityEstimator(VPI_BACKEND_CUDA, imageSize.width, imageSize.height, VPI_IMAGE_FORMAT_U16, &stereoParams, &mVPIStereo);
+
+	vpiImageCreate(480, 270, VPI_IMAGE_FORMAT_U16, 0, &mVPILeftRightDisp);
+	vpiImageCreate(480, 270, VPI_IMAGE_FORMAT_U16, 0, &mVPIRightLeftDisp);
+	vpiImageCreate(480, 270, VPI_IMAGE_FORMAT_U8,  0, &mVPIOutDisp);
+
+	filteredDisp = cv::Mat(imageSize, CV_16SC1);
 }
 
 CSI_StereoCamera::~CSI_StereoCamera()
 {
+	vpiEventDestroy(mSyncEvent);
+	vpiPayloadDestroy(mVPIStereo);
+	vpiImageDestroy(mVPILeftRightDisp);
+	vpiImageDestroy(mVPIRightLeftDisp);
+	vpiImageDestroy(mVPIOutDisp);
 }
 
 bool CSI_StereoCamera::startCamera(const uint8_t framerate, const uint8_t mode, const uint8_t lCamID,
@@ -85,16 +105,29 @@ bool CSI_StereoCamera::startCamera(const uint8_t framerate, const uint8_t mode, 
 
 bool CSI_StereoCamera::getRectified(const bool forceProcessing, cv::Mat& left, cv::Mat& right)
 {
-	bool retVal = mFTC.checkTimes(mLCam.acquireGreyScale(), mRCam.acquireGreyScale());
+	VPIImageData data;
+//	bool retVal = mFTC.checkTimes(mLCam.acquireGreyScale(), mRCam.acquireGreyScale());
+//	if (retVal || forceProcessing)
+//	{
+//		/* perform processing only if images are OK or we specifically required it. */
+//		mLCam.rectifyImage(&left);
+//		mRCam.rectifyImage(&right);
+//	}
+//    return retVal;
+	bool retVal = mFTC.checkTimes(mRCam.acquireRectified(), mLCam.acquireRectified());
 	if (retVal || forceProcessing)
 	{
-		/* perform processing only if images are OK or we specifically required it. */
-		mLCam.rectifyImage();
-		mRCam.rectifyImage();
-		mLCam.getRectImg().download(left);
-		mRCam.getRectImg().download(right);
+		vpiEventRecord(mSyncEvent, mRCam.getStream());
+		vpiStreamWaitEvent(mLCam.getStream(), mSyncEvent);
+
+    	vpiImageLock(mLCam.getFiltered(), VPI_LOCK_READ, &data);
+    	vpiImageDataExportOpenCVMat(data, &left);
+        vpiImageUnlock(mLCam.getFiltered());
+    	vpiImageLock(mRCam.getFiltered(), VPI_LOCK_READ, &data);
+    	vpiImageDataExportOpenCVMat(data, &right);
+        vpiImageUnlock(mRCam.getFiltered());
 	}
-    return retVal;
+	return retVal;
 }
 
 void CSI_StereoCamera::restartDispFilter(const double lambda, const double sigmaColour)
@@ -148,10 +181,14 @@ bool CSI_StereoCamera::loadCalibration(const std::string& folder)
                 scaleCameraMatrix(mLeftGPU.size(), maxSize, P1);
                 scaleCameraMatrix(mLeftGPU.size(), maxSize, P2);
 
-                initUndistortRectifyMap(lCamMat, lDist, R1, P1, mLeftGPU.size(), CV_32FC1, rectMap[0], rectMap[1]);
-                mLCam.setRMap(rectMap[0], rectMap[1]);
-                initUndistortRectifyMap(rCamMat, rDist, R2, P2, mLeftGPU.size(), CV_32FC1, rectMap[0], rectMap[1]);
-                mRCam.setRMap(rectMap[0], rectMap[1]);
+//                initUndistortRectifyMap(lCamMat, lDist, R1, P1, mLeftGPU.size(), CV_32FC1, rectMap[0], rectMap[1]);
+//                mLCam.setRMap(rectMap[0], rectMap[1]);
+//                initUndistortRectifyMap(rCamMat, rDist, R2, P2, mLeftGPU.size(), CV_32FC1, rectMap[0], rectMap[1]);
+//                mRCam.setRMap(rectMap[0], rectMap[1]);
+
+                mLCam.initialiseVPIRemap(lCamMat, P1, lDist, R1);
+                mRCam.initialiseVPIRemap(rCamMat, P2, rDist, R2);
+//                mRCam.initialiseVPIRemap(rCamMat, P2, rDist, R, T);
             }
         }
     }
@@ -160,48 +197,81 @@ bool CSI_StereoCamera::loadCalibration(const std::string& folder)
 
 void CSI_StereoCamera::computeDisp(const bool filter, cv::Mat& disparity)
 {
+	VPIImageData data;
+    VPIStereoDisparityEstimatorParams params;
+    params.windowSize   = 5;
+    params.maxDisparity = 32;
+
 	int minDisp;
 	int specklewindowsize;
 	int disp12diff;
 
-	mMedianFilter->apply(mLCam.getRectImg(), mLeftGPU);
-	mMedianFilter->apply(mRCam.getRectImg(), mRightGPU);
+//	mLCam.getFiltered(lFil);
+//	mRCam.getFiltered(rFil);
+////	mMedianFilter->apply(lRect, mLeftGPU);
+////	mMedianFilter->apply(rRect, mRightGPU);
+//	mLeftGPU.upload(lFil);
+//	mRightGPU.upload(rFil);
 
 #ifdef LOG
 	int64 time1 = cv::getTickCount();
 #endif /* LOG */
-	mStereoBM->compute(mLeftGPU, mRightGPU, mDisparity);
+//	mStereoBM->compute(mLeftGPU, mRightGPU, mDisparity);
+	vpiSubmitStereoDisparityEstimator(mLCam.getStream(), VPI_BACKEND_CUDA, mVPIStereo,
+			mLCam.getFiltered16(), mRCam.getFiltered16(), mVPILeftRightDisp, nullptr, &params);
 #ifdef LOG
 	int64 time2 = cv::getTickCount();
 #endif /* LOG */
 
     if (filter)
     {
-    	/* Store parameters specific for left-right disparity. */
-    	minDisp = mStereoBM->getMinDisparity();
-    	specklewindowsize = mStereoBM->getSpeckleWindowSize();
-    	disp12diff = mStereoBM->getDisp12MaxDiff();
-
-    	mDisparity.download(mDisparityCPU);
-
-    	/* We need to change parameters for calculating right-left disparity. */
-    	mStereoBM->setMinDisparity(-(mStereoBM->getMinDisparity() + mStereoBM->getNumDisparities()) + 1);
-    	mStereoBM->setDisp12MaxDiff(1000000);
-		mStereoBM->setSpeckleWindowSize(0);
-
-		mStereoBM->compute(mRightGPU, mLeftGPU, mDisparity);
+//    	/* Store parameters specific for left-right disparity. */
+//    	minDisp = mStereoBM->getMinDisparity();
+//    	specklewindowsize = mStereoBM->getSpeckleWindowSize();
+//    	disp12diff = mStereoBM->getDisp12MaxDiff();
+//
+//    	mDisparity.download(mDisparityCPU);
+//
+//    	/* We need to change parameters for calculating right-left disparity. */
+//    	mStereoBM->setMinDisparity(-(mStereoBM->getMinDisparity() + mStereoBM->getNumDisparities()) + 1);
+//    	mStereoBM->setDisp12MaxDiff(1000000);
+//		mStereoBM->setSpeckleWindowSize(0);
+//
+//		mStereoBM->compute(mRightGPU, mLeftGPU, mDisparity);
+    	vpiSubmitStereoDisparityEstimator(mLCam.getStream(), VPI_BACKEND_CUDA, mVPIStereo,
+    			mRCam.getFiltered16(), mLCam.getFiltered16(), mVPIRightLeftDisp, nullptr, &params);
+    	vpiStreamSync(mLCam.getStream());
 #ifdef LOG
     	int64 time3 = cv::getTickCount();
 #endif /* LOG */
 
-    	/* We rever parameters back to calculating left-right disparity. */
-    	mStereoBM->setMinDisparity(minDisp);
-    	mStereoBM->setDisp12MaxDiff(disp12diff);
-		mStereoBM->setSpeckleWindowSize(specklewindowsize);
+//    	/* We rever parameters back to calculating left-right disparity. */
+//    	mStereoBM->setMinDisparity(minDisp);
+//    	mStereoBM->setDisp12MaxDiff(disp12diff);
+//		mStereoBM->setSpeckleWindowSize(specklewindowsize);
 
-    	mLeftGPU.download(mLeftCPU);
-    	mDisparity.download(mDisparityRLCPU);
-    	mDispWLSFilter->filter(mDisparityCPU, mLeftCPU, disparity, mDisparityRLCPU);
+//    	mLeftGPU.download(mLeftCPU);
+//    	mDisparity.download(mDisparityRLCPU);
+
+
+    	vpiImageLock(mLCam.getFiltered(), VPI_LOCK_READ, &data);
+    	vpiImageDataExportOpenCVMat(data, &mLeftCPU);
+        vpiImageUnlock(mLCam.getFiltered());
+    	vpiImageLock(mVPILeftRightDisp, VPI_LOCK_READ, &data);
+    	vpiImageDataExportOpenCVMat(data, &mDisparityCPU);
+        vpiImageUnlock(mVPILeftRightDisp);
+    	vpiImageLock(mVPIRightLeftDisp, VPI_LOCK_READ, &data);
+    	vpiImageDataExportOpenCVMat(data, &mDisparityRLCPU);
+        vpiImageUnlock(mVPIRightLeftDisp);
+
+        mDisparityCPU.convertTo(mDisparityCPU, CV_16SC1);
+        mDisparityRLCPU.convertTo(mDisparityRLCPU, CV_16SC1);
+
+    	mDispWLSFilter->filter(mDisparityCPU, mLeftCPU, filteredDisp, mDisparityRLCPU);
+
+    	cv::ximgproc::getDisparityVis(filteredDisp, disparity, 1/256.0);
+//    	filteredDisp.convertTo(disparity, CV_8UC1, 1.0 / 256.0);
+
 #ifdef LOG
     	int64 time4 = cv::getTickCount();
     	printf("LR Disparity calculated in %f \t RL Disparity calculated in %f \t WLS filter calculated in %f \n",
@@ -212,7 +282,16 @@ void CSI_StereoCamera::computeDisp(const bool filter, cv::Mat& disparity)
     }
     else
     {
-    	mDisparity.download(disparity);
+    	VPIConvertImageFormatParams cvtParams;
+    	vpiInitConvertImageFormatParams(&cvtParams);
+    	cvtParams.scale = 255.0f/(64*32-1);
+    	vpiSubmitConvertImageFormat(mLCam.getStream(), VPI_BACKEND_CUDA, mVPILeftRightDisp, mVPIOutDisp, &cvtParams);
+    	vpiStreamSync(mLCam.getStream());
+
+    	vpiImageLock(mVPIOutDisp, VPI_LOCK_READ, &data);
+    	vpiImageDataExportOpenCVMat(data, &disparity);
+    	vpiImageUnlock(mVPIOutDisp);
+//    	mDisparity.download(disparity);
 #ifdef LOG
     	printf("Disparity calculated in %f \n", static_cast<double>(time2 - time1) / cv::getTickFrequency());
 #endif /* LOG */

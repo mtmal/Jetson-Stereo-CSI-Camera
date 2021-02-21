@@ -196,6 +196,14 @@ private:
     cv::Ptr<cv::ximgproc::DisparityWLSFilter> mDispWLSFilter;
     /** Utility class used for comparing stereo pair frame times to access if they are synchronised or not. */
     FrameTimeChecker mFTC;
+
+    cv::Mat filteredDisp;
+
+    VPIEvent mSyncEvent;
+    VPIPayload mVPIStereo;
+    VPIImage mVPILeftRightDisp;
+    VPIImage mVPIRightLeftDisp;
+    VPIImage mVPIOutDisp;
 };
 
 #endif // __CSI_STEREOCAMERA_H__

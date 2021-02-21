@@ -23,6 +23,6 @@ target_link_libraries(CSI_Camera ${OpenCV_LIBRARIES})
 
 # add the test application
 add_executable(test_CSI_Camera tests/cam_test.cpp)
-target_link_libraries(test_CSI_Camera CSI_Camera ${OpenCV_LIBRARIES})
+target_link_libraries(test_CSI_Camera CSI_Camera ${OpenCV_LIBRARIES} nvvpi)
 
 file(COPY config DESTINATION ./)

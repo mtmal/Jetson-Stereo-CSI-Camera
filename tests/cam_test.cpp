@@ -210,7 +210,7 @@ void run(const cv::Size& imageSize, const uint8_t framerate, const uint8_t mode)
     /** Buffers for images. */
     cv::Mat imgs[2] = {cv::Mat(imageSize, CV_8UC1), cv::Mat(imageSize, CV_8UC1)};
     /** Buffer for disparity map. */
-    cv::Mat disparity(imageSize, CV_8UC1);
+    cv::Mat disparity(cv::Size(480, 270), CV_8UC1);
     /** The stereo camera class. */
     CSI_StereoCamera stereo(imageSize);
 
