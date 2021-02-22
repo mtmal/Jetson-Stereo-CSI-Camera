@@ -176,20 +176,10 @@ private:
     CSI_Camera mLCam;
     /** The wrapper for right CSI camera. */
     CSI_Camera mRCam;
-    /** GPU-allocated buffer for initial disparity map. */
-    cv::cuda::GpuMat mDisparity;
-    /** GPU-allocated buffer for the result of median filtering on left image. */
-    cv::cuda::GpuMat mLeftGPU;
-    /** GPU-allocated buffer for the result of median filtering on right image. */
-    cv::cuda::GpuMat mRightGPU;
-    /** CPU-allocated buffer for left camera image used in disparity map filtering. */
-    cv::Mat mLeftCPU;
-    /** CPU-allocated buffer for the disparity map used in filtering. */
-    cv::Mat mDisparityCPU;
-    /** CPU-allocated buffer for the right-left disparity used in filtering. */
-    cv::Mat mDisparityRLCPU;
-    /** Pointer to CUDA-enabled median filter. */
-    cv::Ptr<cv::cuda::Filter> mMedianFilter;
+    /** Preallocated shared buffer for the left-right disparity map. */
+    cv::cuda::HostMem mDisparityLR;
+    /** Preallocated shared buffer for the right-left disparity map used in filtering. */
+    cv::cuda::HostMem mDisparityRL;
     /** Pointer to CUDA-enabled stereo block-matching algorithm. */
     cv::Ptr<cv::cuda::StereoBM> mStereoBM;
     /** Pointer to disparity filter algorithm. */

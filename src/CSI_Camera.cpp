@@ -51,7 +51,8 @@ std::string gstreamer_pipeline(const uint8_t id, const uint8_t mode, const cv::S
 
 CSI_Camera::CSI_Camera(const cv::Size& imageSize)
 : mID(0), mThreadRun(false), mThread(0), mFrameTime(-1.0), mCapture(),
-  mImg(imageSize, CV_8UC3), mGrey(imageSize, CV_8UC1), mRectified(imageSize, CV_8UC1)
+  mImg(imageSize, CV_8UC3, cv::cuda::HostMem::SHARED), mGrey(imageSize, CV_8UC1),
+  mRectified(imageSize, CV_8UC1), mFiltered(imageSize, CV_8UC1, cv::cuda::HostMem::SHARED)
 {
     pthread_mutex_init(&mMutex, nullptr);
 }
@@ -90,7 +91,7 @@ double CSI_Camera::getRawImage(cv::Mat& image) const
     int errorCode = pthread_mutex_lock(&mMutex);
     if (0 == errorCode)
     {
-        mImg.download(image);
+    	mImg.createMatHeader().copyTo(image);
         time = mFrameTime;
         pthread_mutex_unlock(&mMutex);
     }
@@ -106,6 +107,8 @@ double CSI_Camera::getRawImage(cv::Mat& image) const
 void CSI_Camera::rectifyImage()
 {
 	cv::cuda::remap(mGrey, mRectified, mRMap[0], mRMap[1], cv::INTER_LINEAR);
+	/* 11 seems like a massive value, but images are small and super-noisy, so we kind of need it. */
+	cv::cuda::bilateralFilter(mRectified, mFiltered, 11, 50, 50);
 }
 
 void CSI_Camera::setRMap(const cv::Mat& xmap, const cv::Mat& ymap)

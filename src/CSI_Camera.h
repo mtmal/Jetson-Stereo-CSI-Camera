@@ -113,7 +113,7 @@ public:
     /**
      *  @return the read-only access to the latest raw RGB image.
      */
-    constexpr const cv::cuda::GpuMat& getImg() const
+    constexpr const cv::cuda::HostMem& getImg() const
     {
         return mImg;
     }
@@ -135,6 +135,14 @@ public:
     }
 
     /**
+     *  @return the read-only access to the latest filtered rectified grey-scale image.
+     */
+    constexpr const cv::cuda::HostMem& getFilteredImg() const
+    {
+        return mFiltered;
+    }
+
+    /**
      * This is somewhat hard-coded for a specific camera. Provides image size and framerate for given mode.
      *  @param mode the mode for which information need to be obtained.
      *  @param[out] size the size of image for given mode.
@@ -147,6 +155,11 @@ protected:
      * The main body of the thread that constantly retrieves the latest image from CSI camera.
      */
     void mainThreadBody();
+
+    /**
+     * The main body of the thread that processes images when asked.
+     */
+    void processThreadBody();
 
 private:
     /**
@@ -173,12 +186,14 @@ private:
     double mFrameTime;
     /** OpenCV wrapper which allows communication with CSI camera. */
     cv::VideoCapture mCapture;
-    /** Preallocated buffer on GPU for raw RGB image. */
-    cv::cuda::GpuMat mImg;
+    /** Preallocated shared buffer for raw RGB image. */
+    cv::cuda::HostMem mImg;
     /** Preallocated buffer on GPU for raw greyscale image. */
     cv::cuda::GpuMat mGrey;
     /** Preallocated buffer on GPU for rectified greyscale image. */
     cv::cuda::GpuMat mRectified;
+    /** Preallocated shared buffer for filtered rectified greyscale image. */
+    cv::cuda::HostMem mFiltered;
     /** Preallocated buffers for image rectification maps. */
     cv::cuda::GpuMat mRMap[2];
     /** Mutex for synchronous access to data from the camera. */
