@@ -131,7 +131,7 @@ public:
      *  @return the pointer to stereoBM class for configuration.
      *  Handy for dynamic parameter selection with custom UI.
      */
-    inline cv::Ptr<cv::cuda::StereoBM> getStereoBM() const
+    inline cv::Ptr<cv::StereoBM> getStereoBM() const
     {
         return mStereoBM;
     }
@@ -167,9 +167,10 @@ public:
      * Computes a disparity map using rectified greyscale images. Because IMX219-83 is quite noisy,
      * a median filter is applied to rectified images before calculating the disparity map.
      *  @param filter if set to true the disparity map will be filtered.
-     *  @param[out] disparity the preallocated buffer for disparity map.
+     *  @param[out] disparity the resulting disparity map.
+     *  @param[out] pointCloud the resulting point cloud.
      */
-    void computeDisp(const bool filter, cv::Mat& disparity);
+    void computeDisp(const bool filter, cv::Mat& disparity, cv::Mat& pointCloud);
 
 private:
     /** The wrapper for left CSI camera. */
@@ -180,12 +181,20 @@ private:
     cv::cuda::HostMem mDisparityLR;
     /** Preallocated shared buffer for the right-left disparity map used in filtering. */
     cv::cuda::HostMem mDisparityRL;
+    /** Preallocated shared buffer for the result of disparity filtering. */
+    cv::cuda::HostMem mDisparityF;
+    /** Perspective transformation matrix. */
+    cv::Mat mQ;
+    /** Preallocated shared buffer for the latest point cloud. */
+    cv::cuda::HostMem mPointCloud;
     /** Pointer to CUDA-enabled stereo block-matching algorithm. */
-    cv::Ptr<cv::cuda::StereoBM> mStereoBM;
+    cv::Ptr<cv::StereoBM> mStereoBM;
     /** Pointer to disparity filter algorithm. */
     cv::Ptr<cv::ximgproc::DisparityWLSFilter> mDispWLSFilter;
     /** Utility class used for comparing stereo pair frame times to access if they are synchronised or not. */
     FrameTimeChecker mFTC;
+
+    cv::Mat mConfidence;
 };
 
 #endif // __CSI_STEREOCAMERA_H__

@@ -107,7 +107,7 @@ double CSI_Camera::getRawImage(cv::Mat& image) const
 void CSI_Camera::rectifyImage()
 {
 	cv::cuda::remap(mGrey, mRectified, mRMap[0], mRMap[1], cv::INTER_LINEAR);
-	/* 11 seems like a massive value, but images are small and super-noisy, so we kind of need it. */
+	/* it seems like a massive value, but images are small and super-noisy, so we kind of need it. */
 	cv::cuda::bilateralFilter(mRectified, mFiltered, 11, 50, 50);
 }
 

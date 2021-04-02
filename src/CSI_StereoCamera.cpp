@@ -19,9 +19,9 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 ////////////////////////////////////////////////////////////////////////////////
-
 #include <opencv2/cudastereo.hpp>
 #include <opencv2/ximgproc/disparity_filter.hpp>
+#include <opencv2/ximgproc/edge_filter.hpp>
 #include "CameraConstants.h"
 #include "CSI_StereoCamera.h"
 
@@ -52,14 +52,33 @@ void scaleCameraMatrix(const cv::Size& imgSize, const cv::Size& maxSize, cv::Mat
         camMat.at<double>(1, 3) *= static_cast<double>(imgSize.height)  / static_cast<double>(maxSize.height);
     }
 }
+
+/**
+ * Scales centre of image and focal length in the Q matrix.
+ * TODO: same fix needs to be applied as described for scaleCameraMatrix function.
+ *  @param imgSize the size of images which will be acquired from the cameras.
+ *  @param maxSize the max size of images for which the calibration was done.
+ *  @param[in/out] Q the perspective transformation matrix.
+ */
+void scaleQMatrix(const cv::Size& imgSize, const cv::Size& maxSize, cv::Mat& Q)
+{
+	Q.at<double>(0, 3) *= static_cast<double>(imgSize.width)  / static_cast<double>(maxSize.width);
+	Q.at<double>(1, 3) *= static_cast<double>(imgSize.height) / static_cast<double>(maxSize.height);
+	Q.at<double>(2, 3) *= static_cast<double>(imgSize.width)  / static_cast<double>(maxSize.width);
+}
 } /* end of the anonymous namespace */
 
 CSI_StereoCamera::CSI_StereoCamera(const cv::Size& imageSize)
-: mLCam(imageSize), mRCam(imageSize), mDisparityLR(imageSize, CV_8UC1, cv::cuda::HostMem::SHARED),
-  mDisparityRL(imageSize, CV_8UC1, cv::cuda::HostMem::SHARED), mStereoBM(cv::cuda::createStereoBM(160))
+: mLCam(imageSize), mRCam(imageSize), mDisparityLR(imageSize, CV_16S, cv::cuda::HostMem::SHARED),
+  mDisparityRL(imageSize, CV_8UC1, cv::cuda::HostMem::SHARED),
+  mDisparityF(imageSize, CV_8UC1, cv::cuda::HostMem::SHARED), mQ(),
+  mPointCloud(imageSize, CV_32FC3, cv::cuda::HostMem::SHARED),
+  mStereoBM(cv::StereoBM::create(160, 15))
 {
 	mStereoBM->setPreFilterType(1);
-	restartDispFilter(8000.0, 2.0);
+	restartDispFilter(8000.0, 1.5);
+
+	mConfidence = cv::Mat(imageSize, CV_8UC1);
 }
 
 CSI_StereoCamera::~CSI_StereoCamera()
@@ -105,7 +124,7 @@ bool CSI_StereoCamera::loadCalibration(const std::string& folder)
 {
     cv::Size maxSize;
     cv::Mat lCamMat, rCamMat, lDist, rDist;
-    cv::Mat R, T, R1, R2, P1, P2, Q;
+    cv::Mat R, T, R1, R2, P1, P2;
     cv::Mat rectMap[2];
     bool retVal = true;
     cv::FileStorage fs;
@@ -140,10 +159,12 @@ bool CSI_StereoCamera::loadCalibration(const std::string& folder)
                 fs[RECTIFICATION_RIGHT] >> R2;
                 fs[NEW_CAM_MATRIX_LEFT] >> P1;
                 fs[NEW_CAM_MATRIX_RIGHT]>> P2;
-                fs[DISPARITY_TO_DEPTH]  >> Q;
+                fs[DISPARITY_TO_DEPTH]  >> mQ;
                 fs.release();
                 scaleCameraMatrix(mDisparityLR.size(), maxSize, P1);
                 scaleCameraMatrix(mDisparityLR.size(), maxSize, P2);
+                scaleQMatrix(mDisparityLR.size(), maxSize, mQ);
+                mQ.convertTo(mQ, CV_32F);
 
                 initUndistortRectifyMap(lCamMat, lDist, R1, P1, mDisparityLR.size(), CV_32FC1, rectMap[0], rectMap[1]);
                 mLCam.setRMap(rectMap[0], rectMap[1]);
@@ -155,7 +176,7 @@ bool CSI_StereoCamera::loadCalibration(const std::string& folder)
     return retVal;
 }
 
-void CSI_StereoCamera::computeDisp(const bool filter, cv::Mat& disparity)
+void CSI_StereoCamera::computeDisp(const bool filter, cv::Mat& disparity, cv::Mat& pointCloud)
 {
 	int minDisp;
 	int specklewindowsize;
@@ -181,17 +202,35 @@ void CSI_StereoCamera::computeDisp(const bool filter, cv::Mat& disparity)
     	mStereoBM->setDisp12MaxDiff(1000000);
 		mStereoBM->setSpeckleWindowSize(0);
 
-		mStereoBM->compute(mRCam.getFilteredImg(), mLCam.getFilteredImg(), mDisparityRL);
+    	mStereoBM->compute(mRCam.getFilteredImg(), mLCam.getFilteredImg(), mDisparityRL);
 #ifdef LOG
     	int64 time3 = cv::getTickCount();
 #endif /* LOG */
 
-    	/* We rever parameters back to calculating left-right disparity. */
+    	/* We revert parameters back to calculating left-right disparity. */
     	mStereoBM->setMinDisparity(minDisp);
     	mStereoBM->setDisp12MaxDiff(disp12diff);
 		mStereoBM->setSpeckleWindowSize(specklewindowsize);
 
-    	mDispWLSFilter->filter(mDisparityLR, mLCam.getFilteredImg(), disparity, mDisparityRL);
+    	mDispWLSFilter->filter(mDisparityLR, mLCam.getFilteredImg(), mDisparityF, mDisparityRL);
+    	mConfidence = mDispWLSFilter->getConfidenceMap();
+
+//    	cv::Mat disp;
+//    	double fbs_spatial = 16.0;
+//    	double fbs_luma = 8.0;
+//    	double fbs_chroma = 8.0;
+//    	double fbs_lambda = 128.0;
+//    	cv::ximgproc::fastBilateralSolverFilter(mLCam.getFilteredImg(), mDisparityF, mConfidence/255.0f, disp,
+//    			fbs_spatial, fbs_luma, fbs_chroma, fbs_lambda);
+
+
+
+//    	cv::Mat temp;
+//    	printf("type: %d \n", mDisparityF.type());
+//    	mDisparityF.createMatHeader().convertTo(temp, CV_32F, 1.0 / 16.0);
+    	cv::reprojectImageTo3D(mDisparityF, mPointCloud, mQ);
+    	mDisparityF.createMatHeader().convertTo(disparity, CV_8U, 255/(mStereoBM->getNumDisparities()*16.));
+//    	disparity = mDisparityF.createMatHeader();
 #ifdef LOG
     	int64 time4 = cv::getTickCount();
     	printf("LR Disparity calculated in %f \t RL Disparity calculated in %f \t WLS filter calculated in %f \n",
@@ -202,9 +241,14 @@ void CSI_StereoCamera::computeDisp(const bool filter, cv::Mat& disparity)
     }
     else
     {
-    	disparity = mDisparityLR.createMatHeader();
+//    	cv::Mat temp;
+//    	mDisparityLR.createMatHeader().convertTo(temp, CV_32F, 1.0 / 16.0);
+    	cv::reprojectImageTo3D(mDisparityLR, mPointCloud, mQ);
+    	mDisparityLR.createMatHeader().convertTo(disparity, CV_8U, 255/(mStereoBM->getNumDisparities()*16.));
+//    	disparity = mDisparityLR.createMatHeader();
 #ifdef LOG
     	printf("Disparity calculated in %f \n", static_cast<double>(time2 - time1) / cv::getTickFrequency());
 #endif /* LOG */
     }
+    pointCloud = mPointCloud.createMatHeader();
 }

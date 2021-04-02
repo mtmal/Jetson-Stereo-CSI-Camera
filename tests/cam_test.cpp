@@ -52,7 +52,7 @@ int sigma;
  * Prints help information about this application.
  *  @param name the name of the executable.
  */
-void printHelp(const char* name)
+static void printHelp(const char* name)
 {
 	printf("Usage: %s [options] \n", name);
 	printf("    -h, --help      -> prints this information \n");
@@ -79,6 +79,10 @@ static void onTrackbar(int, void* data)
     if (0 == blockSize % 2)
     {
         ++blockSize;
+    }
+    if (0 == preFilterSize % 2)
+    {
+        ++preFilterSize;
     }
 
     pthread_mutex_lock(&mutex);
@@ -148,7 +152,7 @@ static void onTrackbar(int, void* data)
  * Creates sliders to control disparity map parameters.
  *  @param stereoCam the stereo camera from which initial parameters can be taken and which will be used in callbacks.
  */
-void createSlides(CSI_StereoCamera& stereoCam)
+static void createSlides(CSI_StereoCamera& stereoCam)
 {
 	preFilterType = stereoCam.getStereoBM()->getPreFilterType();
     preFilterSize = stereoCam.getStereoBM()->getPreFilterSize();
@@ -193,13 +197,31 @@ void createSlides(CSI_StereoCamera& stereoCam)
     cv::createTrackbar("Filter Sigma Colour", "Disparity", &sigma, 3000, onTrackbar, &stereoCam);
 }
 
+static void saveXYZ(const std::string& filename, const cv::Mat& mat)
+{
+    static const double max_z = 1;
+    FILE* fp = fopen(filename.c_str(), "wt");
+    for (int y = 0; y < mat.rows; ++y)
+    {
+        for (int x = 0; x < mat.cols; ++x)
+        {
+        	const cv::Vec3f& point = mat.at<cv::Vec3f>(y, x);
+            if (fabs(point[2] - max_z) >= FLT_EPSILON && fabs(point[2]) <= max_z)
+            {
+            	fprintf(fp, "%f %f %f\n", point[0], point[1], point[2]);
+            }
+        }
+    }
+    fclose(fp);
+}
+
 /**
  * Runs the application.
  *  @param imageSize the size to which images should be resized.
  *  @param framerate the framerate at which cameras should acquire images.
  *  @param mode the mode at which cameras should operate.
  */
-void run(const cv::Size& imageSize, const uint8_t framerate, const uint8_t mode)
+static void run(const cv::Size& imageSize, const uint8_t framerate, const uint8_t mode)
 {
     /** Flag to pause processing images. */
     bool pause = false;
@@ -211,6 +233,7 @@ void run(const cv::Size& imageSize, const uint8_t framerate, const uint8_t mode)
     cv::Mat imgs[2] = {cv::Mat(imageSize, CV_8UC1), cv::Mat(imageSize, CV_8UC1)};
     /** Buffer for disparity map. */
     cv::Mat disparity(imageSize, CV_8UC1);
+    cv::Mat pointCloud;
     /** The stereo camera class. */
     CSI_StereoCamera stereo(imageSize);
 
@@ -232,7 +255,7 @@ void run(const cv::Size& imageSize, const uint8_t framerate, const uint8_t mode)
 				time2 = cv::getTickCount();
 
 				pthread_mutex_lock(&mutex);
-				stereo.computeDisp(useFiltered, disparity);
+				stereo.computeDisp(useFiltered, disparity, pointCloud);
 				pthread_mutex_unlock(&mutex);
 				time3 = cv::getTickCount();
 
@@ -241,11 +264,12 @@ void run(const cv::Size& imageSize, const uint8_t framerate, const uint8_t mode)
 				cv::imshow("Disparity", disparity);
 				time4 = cv::getTickCount();
 
-				 printf("%f: Processed in: %f s; Disparity: %f s; Displayed: %f s\n",
+				printf("%f: Processed in: %f s; Disparity: %f s; Displayed: %f s\n",
 					 static_cast<double>(time1) / cv::getTickFrequency(),
 					 static_cast<double>(time2 - time1) / cv::getTickFrequency(),
 					 static_cast<double>(time3 - time2) / cv::getTickFrequency(),
 					 static_cast<double>(time4 - time3) / cv::getTickFrequency());
+//				saveXYZ(std::to_string(static_cast<double>(time1) / cv::getTickFrequency()) + ".xyz", pointCloud);
 			}
 			key = cv::waitKey(30) & 0xff;
 			/* when space bar is pressed, pause processing images and save current rectified images with disparity map to files. */
@@ -256,6 +280,7 @@ void run(const cv::Size& imageSize, const uint8_t framerate, const uint8_t mode)
 				cv::imwrite("left.png", imgs[0]);
 				cv::imwrite("right.png", imgs[1]);
 				cv::imwrite("disparity.png", disparity);
+				saveXYZ("pc.xyz", pointCloud);
 			}
 		}
 
