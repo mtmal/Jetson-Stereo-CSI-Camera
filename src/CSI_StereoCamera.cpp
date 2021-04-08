@@ -66,6 +66,9 @@ void scaleQMatrix(const cv::Size& imgSize, const cv::Size& maxSize, cv::Mat& Q)
 	Q.at<double>(1, 3) *= static_cast<double>(imgSize.height) / static_cast<double>(maxSize.height);
 	Q.at<double>(2, 3) *= static_cast<double>(imgSize.width)  / static_cast<double>(maxSize.width);
 }
+
+cv::Ptr<cv::StereoMatcher> mRightMatcher;
+
 } /* end of the anonymous namespace */
 
 CSI_StereoCamera::CSI_StereoCamera(const cv::Size& imageSize)
@@ -115,6 +118,7 @@ bool CSI_StereoCamera::getRectified(const bool forceProcessing, cv::Mat& left, c
 
 void CSI_StereoCamera::restartDispFilter(const double lambda, const double sigmaColour)
 {
+	mRightMatcher = cv::ximgproc::createRightMatcher(mStereoBM);
 	mDispWLSFilter = cv::ximgproc::createDisparityWLSFilter(mStereoBM);
 	mDispWLSFilter->setLambda(lambda);
 	mDispWLSFilter->setSigmaColor(sigmaColour);
@@ -192,25 +196,27 @@ void CSI_StereoCamera::computeDisp(const bool filter, cv::Mat& disparity, cv::Ma
 
     if (filter)
     {
-    	/* Store parameters specific for left-right disparity. */
-    	minDisp = mStereoBM->getMinDisparity();
-    	specklewindowsize = mStereoBM->getSpeckleWindowSize();
-    	disp12diff = mStereoBM->getDisp12MaxDiff();
+//    	/* Store parameters specific for left-right disparity. */
+//    	minDisp = mStereoBM->getMinDisparity();
+//    	specklewindowsize = mStereoBM->getSpeckleWindowSize();
+//    	disp12diff = mStereoBM->getDisp12MaxDiff();
+//
+//    	/* We need to change parameters for calculating right-left disparity. */
+//    	mStereoBM->setMinDisparity(-(mStereoBM->getMinDisparity() + mStereoBM->getNumDisparities()) + 1);
+//    	mStereoBM->setDisp12MaxDiff(1000000);
+//		mStereoBM->setSpeckleWindowSize(0);
 
-    	/* We need to change parameters for calculating right-left disparity. */
-    	mStereoBM->setMinDisparity(-(mStereoBM->getMinDisparity() + mStereoBM->getNumDisparities()) + 1);
-    	mStereoBM->setDisp12MaxDiff(1000000);
-		mStereoBM->setSpeckleWindowSize(0);
+		mRightMatcher->compute(mRCam.getFilteredImg(), mLCam.getFilteredImg(), mDisparityRL);
 
-    	mStereoBM->compute(mRCam.getFilteredImg(), mLCam.getFilteredImg(), mDisparityRL);
+//    	mStereoBM->compute(mRCam.getFilteredImg(), mLCam.getFilteredImg(), mDisparityRL);
 #ifdef LOG
     	int64 time3 = cv::getTickCount();
 #endif /* LOG */
 
-    	/* We revert parameters back to calculating left-right disparity. */
-    	mStereoBM->setMinDisparity(minDisp);
-    	mStereoBM->setDisp12MaxDiff(disp12diff);
-		mStereoBM->setSpeckleWindowSize(specklewindowsize);
+//    	/* We revert parameters back to calculating left-right disparity. */
+//    	mStereoBM->setMinDisparity(minDisp);
+//    	mStereoBM->setDisp12MaxDiff(disp12diff);
+//		mStereoBM->setSpeckleWindowSize(specklewindowsize);
 
     	mDispWLSFilter->filter(mDisparityLR, mLCam.getFilteredImg(), mDisparityF, mDisparityRL);
     	mConfidence = mDispWLSFilter->getConfidenceMap();

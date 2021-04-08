@@ -35,6 +35,7 @@ std::atomic<bool> useFiltered = false;
 
 /* Parameters used by tracker bars. */
 int filtered;
+int disp12Diff;
 int preFilterType;
 int preFilterSize;
 int preFilterCap;
@@ -104,7 +105,7 @@ static void onTrackbar(int, void* data)
     {
 		stereo->getStereoBM()->setSpeckleWindowSize(speckleSize);
 		stereo->getStereoBM()->setSpeckleRange(speckleRange);
-		stereo->getStereoBM()->setDisp12MaxDiff(-1);
+		stereo->getStereoBM()->setDisp12MaxDiff(disp12Diff);
 	    stereo->getStereoBM()->setUniquenessRatio(uniqueness);
 	    stereo->getStereoBM()->setTextureThreshold(texThreshold);
     }
@@ -164,6 +165,7 @@ static void createSlides(CSI_StereoCamera& stereoCam)
     texThreshold  = stereoCam.getStereoBM()->getTextureThreshold();
     speckleSize   = stereoCam.getStereoBM()->getSpeckleWindowSize();
     speckleRange  = stereoCam.getStereoBM()->getSpeckleRange();
+    disp12Diff	  = stereoCam.getStereoBM()->getDisp12MaxDiff();
 
     lambda		  = static_cast<int>(stereoCam.getDispFilter()->getLambda() / 10);
     sigma         = static_cast<int>(stereoCam.getDispFilter()->getSigmaColor() * 1000.0);
@@ -191,6 +193,8 @@ static void createSlides(CSI_StereoCamera& stereoCam)
     cv::createTrackbar("Texture Threshold", "Disparity", &texThreshold, 100, onTrackbar, &stereoCam);
     cv::createTrackbar("Speckle Size", "Disparity", &speckleSize, 1000, onTrackbar, &stereoCam);
     cv::createTrackbar("Speckle range", "Disparity", &speckleRange, 100, onTrackbar, &stereoCam);
+
+    cv::createTrackbar("Disp 12 Diff", "Disparity", &disp12Diff, 100, onTrackbar, &stereoCam);
 
     cv::createTrackbar("Filter Lambda", "Disparity", &lambda, 1000, onTrackbar, &stereoCam);
     cv::setTrackbarMin("Filter Lambda", "Disparity", 500);
