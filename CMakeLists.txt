@@ -22,7 +22,11 @@ add_library(CSI_Camera SHARED src/FrameTimeChecker.cpp src/CSI_Camera.cpp src/CS
 target_link_libraries(CSI_Camera ${OpenCV_LIBRARIES})
 
 # add the test application
-add_executable(test_CSI_Camera tests/cam_test.cpp)
+add_executable(test_CSI_StereoCamera tests/stereoCam_test.cpp)
+target_link_libraries(test_CSI_StereoCamera CSI_Camera ${OpenCV_LIBRARIES})
+
+# add the test application
+add_executable(test_CSI_Camera tests/monoCam_test.cpp)
 target_link_libraries(test_CSI_Camera CSI_Camera ${OpenCV_LIBRARIES})
 
 file(COPY config DESTINATION ./)
