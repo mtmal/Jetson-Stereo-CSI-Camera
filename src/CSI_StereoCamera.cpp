@@ -87,7 +87,7 @@ CSI_StereoCamera::~CSI_StereoCamera()
     pthread_mutex_destroy(&mMutex);
 }
 
-bool CSI_StereoCamera::startCamera(const cv::Size& imageSize, const uint8_t framerate, const uint8_t mode, const uint8_t lCamID,
+bool CSI_StereoCamera::startCamera(const uint8_t framerate, const uint8_t mode, const uint8_t lCamID,
 		const uint8_t rCamID, const uint8_t flip, const bool colour, const bool rectified)
 {
     bool retVal;
@@ -97,8 +97,8 @@ bool CSI_StereoCamera::startCamera(const cv::Size& imageSize, const uint8_t fram
         stopCamera();
     }
 
-    retVal = mLCam.startCamera(imageSize, framerate, mode, lCamID, flip, colour)
-           & mRCam.startCamera(imageSize, framerate, mode, rCamID, flip, colour);
+    retVal = mLCam.startCamera(mImageSize, framerate, mode, lCamID, flip, colour)
+           & mRCam.startCamera(mImageSize, framerate, mode, rCamID, flip, colour);
 
     if (retVal)
     {
@@ -113,10 +113,10 @@ bool CSI_StereoCamera::startCamera(const cv::Size& imageSize, const uint8_t fram
         }
         else
         {
-            mImages[0] = cv::cuda::HostMem(imageSize, colour ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED);
-            mImages[1] = cv::cuda::HostMem(imageSize, colour ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED);
-            mLeftGPU = cv::cuda::HostMem(imageSize, colour ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED);
-            mRightGPU = cv::cuda::HostMem(imageSize, colour ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED);
+            mImages[0] = cv::cuda::HostMem(mImageSize, colour ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED);
+            mImages[1] = cv::cuda::HostMem(mImageSize, colour ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED);
+            mLeftGPU = cv::cuda::HostMem(mImageSize, colour ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED);
+            mRightGPU = cv::cuda::HostMem(mImageSize, colour ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED);
             mLListID = mLCam.registerListener(*this);
             mRListID = mRCam.registerListener(*this);
         }

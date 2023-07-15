@@ -82,7 +82,6 @@ public:
 
     /**
      * Starts both cameras. If at least one fails to start, it ensures both are stopped.
-	 *  @param imageSize the size of images.
      *  @param framerate the camera's framerate in Hz.
      *  @param mode the mode of the camera - each camera may have different mode specification.
      *  @param lCamID the id of the left camera.
@@ -92,7 +91,7 @@ public:
      *  @param rectified whether to request rectified/undistorted images.
      *	@return true if both cameras have started correctly.
      */
-    bool startCamera(const cv::Size& imageSize, const uint8_t framerate, const uint8_t mode = 0, const uint8_t lCamID = 0,
+    bool startCamera(const uint8_t framerate, const uint8_t mode = 0, const uint8_t lCamID = 0,
     		const uint8_t rCamID = 1, const uint8_t flip = 2, const bool colour = false, const bool rectified = true);
 
     /**
