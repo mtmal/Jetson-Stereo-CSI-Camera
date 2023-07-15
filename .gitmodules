@@ -1,0 +1,3 @@
+[submodule "JetracerUtils"]
+	path = JetracerUtils
+	url = https://github.com/mtmal/JetracerUtils.git

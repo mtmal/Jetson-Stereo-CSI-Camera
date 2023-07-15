@@ -193,6 +193,63 @@ void createSlides(CSI_StereoCamera& stereoCam)
     cv::createTrackbar("Filter Sigma Colour", "Disparity", &sigma, 3000, onTrackbar, &stereoCam);
 }
 
+class MyListener : public IGenericListener<const double, const cv::cuda::GpuMat&, const cv::cuda::GpuMat&>
+{
+public:
+    MyListener(const cv::Size& imageSize, CSI_StereoCamera& stereoCam) : 
+        IGenericListener<const double, const cv::cuda::GpuMat&, const cv::cuda::GpuMat&>(),
+        mStereoCam(stereoCam), mLeft(imageSize, CV_8UC1), mRight(imageSize, CV_8UC1), mDisparity(imageSize, CV_8UC1)
+    {
+        pthread_mutex_init(&mLock, nullptr);
+    }
+
+    virtual ~MyListener()
+    {
+        pthread_mutex_destroy(&mLock);
+    }
+
+    void update(const double time, const cv::cuda::GpuMat& left, const cv::cuda::GpuMat& right) const
+    {
+        int64 time2;
+        int64 time1;
+
+        time1 = cv::getTickCount();
+        mStereoCam.computeDisp(useFiltered, left, right, mDisparity);
+        time2 = cv::getTickCount();
+        pthread_mutex_lock(&mLock);
+        mTimestamp = time;
+        left.download(mLeft);
+        right.download(mRight);
+        pthread_mutex_unlock(&mLock);
+        printf("%f: Disparity calculated in %f \n", 
+                    static_cast<double>(time1) / cv::getTickFrequency(),
+                    static_cast<double>(time2 - time1) / cv::getTickFrequency());
+    }
+
+    double getImages(cv::Mat& left, cv::Mat& right, cv::Mat& disparity) const
+    {
+        ScopedLock lock(mLock);
+        mLeft.copyTo(left);
+        mRight.copyTo(right);
+        mDisparity.copyTo(disparity);
+        return mTimestamp;
+    }
+
+private:
+    /** Reference to the stereo camera class. */
+    CSI_StereoCamera& mStereoCam;
+    /** Images timestamp. */
+    mutable double mTimestamp;
+    /** The left camera image. */
+    mutable cv::Mat mLeft;
+    /** The right camera image. */
+    mutable cv::Mat mRight;
+    /** The stereo disparity image. */
+    mutable cv::Mat mDisparity;
+    /** Mutex for accessing images. */
+    mutable pthread_mutex_t mLock;
+};
+
 /**
  * Runs the application.
  *  @param imageSize the size to which images should be resized.
@@ -201,21 +258,25 @@ void createSlides(CSI_StereoCamera& stereoCam)
  */
 void run(const cv::Size& imageSize, const uint8_t framerate, const uint8_t mode)
 {
-    /** Flag to pause processing images. */
+    /* Flag to pause processing images. */
     bool pause = false;
-    /** Current key pressed by the user. */
-    int key = 0;
-    /* Timestamps at various steps for providing elapsed time. */
-    int64 time1, time2, time3, time4;
-    /** Buffers for images. */
-    cv::Mat imgs[2] = {cv::Mat(imageSize, CV_8UC1), cv::Mat(imageSize, CV_8UC1)};
-    /** Buffer for disparity map. */
-    cv::Mat disparity(imageSize, CV_8UC1);
-    /** The stereo camera class. */
+    /* Current key pressed by the user. */
+    int key;
+    /* The stereo camera class. */
     CSI_StereoCamera stereo(imageSize);
+    /* Left image. */
+    cv::Mat left;
+    /* Right image. */
+    cv::Mat right;
+    /* Stereo disparity image. */
+    cv::Mat disparity;
+    /* Custom listener for stereo camera. */
+    MyListener myListener(imageSize, stereo);
+
+    int myID = stereo.registerListener(myListener);
 
     stereo.loadCalibration("./config");
-    if (stereo.startCamera(framerate, mode))
+    if (stereo.startCamera(imageSize, framerate, mode, 0, 1, 2, false, true))
     {
 		cv::namedWindow("Left CSI Camera", cv::WINDOW_AUTOSIZE);
 		cv::namedWindow("Right CSI Camera", cv::WINDOW_AUTOSIZE);
@@ -226,39 +287,29 @@ void run(const cv::Size& imageSize, const uint8_t framerate, const uint8_t mode)
 		puts("Hit ESC to exit");
 		while (key != 27)
 		{
-			time1 = cv::getTickCount();
-			if (!pause && stereo.getRectified(false, imgs[0], imgs[1]))
-			{
-				time2 = cv::getTickCount();
-
-				pthread_mutex_lock(&mutex);
-				stereo.computeDisp(useFiltered, disparity);
-				pthread_mutex_unlock(&mutex);
-				time3 = cv::getTickCount();
-
-				cv::imshow("Left CSI Camera", imgs[0]);
-				cv::imshow("Right CSI Camera", imgs[1]);
-				cv::imshow("Disparity", disparity);
-				time4 = cv::getTickCount();
-
-				 printf("%f: Processed in: %f s; Disparity: %f s; Displayed: %f s\n",
-					 static_cast<double>(time1) / cv::getTickFrequency(),
-					 static_cast<double>(time2 - time1) / cv::getTickFrequency(),
-					 static_cast<double>(time3 - time2) / cv::getTickFrequency(),
-					 static_cast<double>(time4 - time3) / cv::getTickFrequency());
-			}
+            myListener.getImages(left, right, disparity);
 			key = cv::waitKey(30) & 0xff;
+            cv::imshow("Left CSI Camera", left);
+            cv::imshow("Right CSI Camera", right);
+            cv::imshow("Disparity", disparity);
 			/* when space bar is pressed, pause processing images and save current rectified images with disparity map to files. */
 			if (key == 32)
 			{
 				pause = !pause;
-
-				cv::imwrite("left.png", imgs[0]);
-				cv::imwrite("right.png", imgs[1]);
-				cv::imwrite("disparity.png", disparity);
+                if (pause)
+                {
+                    stereo.unregisterListener(myID);
+                    cv::imwrite("left.png", left);
+                    cv::imwrite("right.png", right);
+                    cv::imwrite("disparity.png", disparity);
+                }
+                else
+                {
+                    myID = stereo.registerListener(myListener);
+                }
 			}
 		}
-
+        stereo.stopCamera();
 		cv::destroyAllWindows();
     }
     else

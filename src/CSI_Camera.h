@@ -1,5 +1,5 @@
 ////////////////////////////////////////////////////////////////////////////////
-// Copyright (C) 2021 Mateusz Malinowski
+// Copyright (C) 2023 Mateusz Malinowski
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -27,6 +27,8 @@
 #include <pthread.h>
 #include <opencv2/core/cuda.hpp>
 #include <opencv2/videoio.hpp>
+#include <GenericTalker.h>
+
 
 /**
  * This class provides communication with CSI camera via OpenCV.
@@ -36,7 +38,7 @@
  *
  * @note this class was tested with IMX219-83 camera.
  */
-class CSI_Camera
+class CSI_Camera : public GenericTalker<const uint8_t, const double, const cv::cuda::GpuMat&>
 {
 public:
     /** Camera's focal length in metres. */
@@ -47,10 +49,9 @@ public:
     static constexpr double SENSOR_HEIGHT_M = 0.0036736;
 
     /**
-     * The class constructor. Initialises all variables and allocates buffers for various images.
-     *  @param imageSize the size to which all images will be resized.
+     * The class constructor. Initialises all variables.
      */
-    CSI_Camera(const cv::Size& imageSize);
+    CSI_Camera();
 
     /**
      * Class destructor. Stops the camera and closes the internal thread.
@@ -59,13 +60,16 @@ public:
 
     /**
      * Starts CSI camera with provided configuration.
+     *  @param imageSize the size to which all images will be resized.
      *  @param framerate the camera's framerate in Hz.
      *  @param mode the mode of the camera - each camera may have different mode specification.
      *  @param id the id of the camera in case there are multiple cameras connected.
      *  @param flip the flip parameter. Usually 0 (no rotation) or 2 (180 deg).
+     *  @param colour true to get BGR images, false for greyscale.
      *  @return true if the both the camera and insternal thread were started correctly.
      */
-    bool startCamera(const uint8_t framerate, const uint8_t mode, const uint8_t id, const uint8_t flip);
+    bool startCamera(const cv::Size& imageSize, const uint8_t framerate, const uint8_t mode, 
+                     const uint8_t id, const uint8_t flip, const bool colour);
 
     /**
      * Stops the camera by stopping the internal thread and releasing the camera itself.
@@ -80,58 +84,9 @@ public:
         return mCapture.isOpened();
     }
 
-    /**
-     * Provides the copy of RGB image as retrieved from the camera.
-     *  @param[out] image the preallocated image buffer for CPU operations.
-     *  @return the timestamp associated with the image or -1 if there was an error.
-     */
-    double getRawImage(cv::Mat& image) const;
-
-    /**
-     * Takes the copy of the latest raw RGB image and converts it to grey-scale.
-     * For multi-camera system it is advised to acquire raw images first before processing them
-     * to maximise chances of having them synchronised by software.
-     *  @return the timestamp associated with the image or -1 if there was an error.
-     */
-    inline double acquireGreyScale()
+    inline constexpr const cv::Size& getSize() const
     {
-    	return getGreyscale(mGrey);
-    }
-
-    /**
-     * Performs image rectification on internal greyscale buffer.
-     */
-    void rectifyImage();
-
-    /**
-     * Sets the two rectification maps.
-     *  @param xmap the first rectifiction map.
-     *  @param ymap the second rectifiction map.
-     */
-    void setRMap(const cv::Mat& xmap, const cv::Mat& ymap);
-
-    /**
-     *  @return the read-only access to the latest raw RGB image.
-     */
-    constexpr const cv::cuda::GpuMat& getImg() const
-    {
-        return mImg;
-    }
-
-    /**
-     *  @return the read-only access to the latest raw grey-scale image.
-     */
-    constexpr const cv::cuda::GpuMat& getGreyImg() const
-    {
-        return mGrey;
-    }
-
-    /**
-     *  @return the read-only access to the latest rectified grey-scale image.
-     */
-    constexpr const cv::cuda::GpuMat& getRectImg() const
-    {
-        return mRectified;
+        return mImgSize;
     }
 
     /**
@@ -142,11 +97,51 @@ public:
      */
     static uint8_t getSizeForMode(const uint8_t mode, cv::Size& size);
 
+    /**
+     *  @return camera ID
+     */
+    inline constexpr uint8_t getId() const
+    {
+        return mID;
+    }
+
+    /**
+     *  @return true if image should be BGR, otherwise greyscale.
+     */
+    inline constexpr bool getColour() const
+    {
+        return mColour;
+    }
+
 protected:
+    /**
+     *  @return true if the main thread should be running.
+     */
+    inline bool isRun() const
+    {
+        return mThreadRun;
+    }
+
+    /**
+     *  @return reference the the OpenCV VideoCapture class.
+     */
+    inline cv::VideoCapture& getCapture()
+    { 
+        return mCapture;
+    }
+
+    /**
+     *  @return const reference the the OpenCV VideoCapture class.
+     */
+    inline constexpr const cv::VideoCapture& getCapture() const
+    { 
+        return mCapture; 
+    }
+
     /**
      * The main body of the thread that constantly retrieves the latest image from CSI camera.
      */
-    void mainThreadBody();
+    void grabThreadBody();
 
 private:
     /**
@@ -154,34 +149,19 @@ private:
      *  @param thread pointer to this class.
      *  @return nullptr.
      */
-    static void* startThread(void* thread);
-
-    /**
-     * Gets the latest raw RGB image and coverts it to greyscale.
-     *  @param[out] grey the preallocated image buffer for GPU operations.
-     *  @return the timestamp associated with the image or -1 if there was an error.
-     */
-    double getGreyscale(cv::cuda::GpuMat& grey) const;
+    static void* startGrabThread(void* thread);
 
     /** ID of this camera. */
     uint8_t mID;
+    /** The size of requested images. */
+    cv::Size mImgSize;
+    /** The flag to indicate if requested image are to be BGR or greyscale. */
+    bool mColour;
     /** Flag that indicates if the thread should be running or not. */
     std::atomic<bool> mThreadRun;
     /** Thread which pulls images from CSI camera. */
     pthread_t mThread;
-    /** Time of the latest frame in seconds. */
-    double mFrameTime;
     /** OpenCV wrapper which allows communication with CSI camera. */
     cv::VideoCapture mCapture;
-    /** Preallocated buffer on GPU for raw RGB image. */
-    cv::cuda::GpuMat mImg;
-    /** Preallocated buffer on GPU for raw greyscale image. */
-    cv::cuda::GpuMat mGrey;
-    /** Preallocated buffer on GPU for rectified greyscale image. */
-    cv::cuda::GpuMat mRectified;
-    /** Preallocated buffers for image rectification maps. */
-    cv::cuda::GpuMat mRMap[2];
-    /** Mutex for synchronous access to data from the camera. */
-    mutable pthread_mutex_t mMutex;
 };
 #endif // __CSI_CAMERA_H__

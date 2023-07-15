@@ -23,8 +23,11 @@
 #ifndef __CSI_STEREOCAMERA_H__
 #define __CSI_STEREOCAMERA_H__
 
+#include <semaphore.h>
+#include <opencv2/cudawarping.hpp>
+#include <GenericTalker.h>
 #include "CSI_Camera.h"
-#include "FrameTimeChecker.h"
+
 
 /** Forward declaration of OpenCV classes. */
 namespace cv
@@ -62,14 +65,15 @@ namespace cv
  * TODO: implement disparity filter using CUDA.
  * TODO: add functionality to reproject disparity to point cloud.
  */
-class CSI_StereoCamera
+class CSI_StereoCamera : public IGenericListener<const uint8_t, const double, const cv::cuda::GpuMat&>,
+                         public GenericTalker<const double, const cv::cuda::GpuMat&, const cv::cuda::GpuMat&>
 {
 public:
 	/**
 	 * Basic constructor which initialises all variables.
 	 *  @param imageSize the size of images for buffers allocation.
 	 */
-    CSI_StereoCamera(const cv::Size& imageSize);
+    explicit CSI_StereoCamera(const cv::Size& imageSize);
 
     /**
      * Class destructor. Empty at the moment.
@@ -78,24 +82,23 @@ public:
 
     /**
      * Starts both cameras. If at least one fails to start, it ensures both are stopped.
+	 *  @param imageSize the size of images.
      *  @param framerate the camera's framerate in Hz.
      *  @param mode the mode of the camera - each camera may have different mode specification.
      *  @param lCamID the id of the left camera.
      *  @param rCamID the id of the right camera.
-     *  @parma flip the flip parameter. Usually 0 (no rotation) or 2 (180 deg).
+     *  @param flip the flip parameter. Usually 0 (no rotation) or 2 (180 deg).
+     *  @param colour true to get BGR images, false for greyscale.
+     *  @param rectified whether to request rectified/undistorted images.
      *	@return true if both cameras have started correctly.
      */
-    bool startCamera(const uint8_t framerate, const uint8_t mode = 0, const uint8_t lCamID = 0,
-    		const uint8_t rCamID = 1, const uint8_t flip = 2);
+    bool startCamera(const cv::Size& imageSize, const uint8_t framerate, const uint8_t mode = 0, const uint8_t lCamID = 0,
+    		const uint8_t rCamID = 1, const uint8_t flip = 2, const bool colour = false, const bool rectified = true);
 
     /**
      * Stops both cameras.
      */
-    inline void stopCamera()
-    {
-    	mLCam.stopCamera();
-    	mRCam.stopCamera();
-    }
+    void stopCamera();
 
     /**
      *  @reutrn true if both cameras have been initialised.
@@ -104,28 +107,6 @@ public:
     {
         return mLCam.isInitialised() && mRCam.isInitialised();
     }
-
-    /**
-     * Captures raw RGB images from stereo camera.
-     *  @param[out] lImg the raw RGB image from the left camera.
-     *  @param[out] rImg the raw RGB image from the right camera.
-     *  @return true if it is safe to assume that both images are synchronised.
-     */
-    inline bool getRawImages(cv::Mat& lImg, cv::Mat& rImg)
-    {
-        return mFTC.checkTimes(mLCam.getRawImage(lImg), mRCam.getRawImage(rImg));
-    }
-
-    /**
-     * Captures image, converts it to greyscale and rectifies it.
-     *  @param forceProcessing if set to true raw images will be rectified
-     *  even if the images might be not synchronised. If set to false, processing
-     *  is not performed and @p lImg and @p rImg are not updated.
-     *  @param[out] lImg the rectified greyscale image from the left camera.
-     *  @param[out] rImg the rectified greyscale image from the right camera.
-     *  @return true if it is safe to assume that both images are synchronised.
-     */
-    bool getRectified(const bool forceProcessing, cv::Mat& lImg, cv::Mat& rImg);
 
     /**
      *  @return the pointer to stereoBM class for configuration.
@@ -167,11 +148,37 @@ public:
      * Computes a disparity map using rectified greyscale images. Because IMX219-83 is quite noisy,
      * a median filter is applied to rectified images before calculating the disparity map.
      *  @param filter if set to true the disparity map will be filtered.
+     *  @param lImg undistorted image from the left camera.
+     *  @param rImg undistorted image from the right camera.
      *  @param[out] disparity the preallocated buffer for disparity map.
      */
-    void computeDisp(const bool filter, cv::Mat& disparity);
+    void computeDisp(const bool filter, const cv::cuda::GpuMat& lImg, const cv::cuda::GpuMat& rImg, cv::Mat& disparity);
 
-private:
+    // override
+    void update(const uint8_t camId, const double imgTime, const cv::cuda::GpuMat& image) const;
+
+protected:
+    /**
+     * The main body of the thread that constantly retrieves the latest image from CSI cameras.
+     */
+    void grabThreadBody();
+
+    /**
+     *  @return true if the main thread should be running.
+     */
+    inline bool isRun() const
+    {
+        return mRunThread.load(std::memory_order_relaxed);
+    }
+
+protected:
+    /**
+     * Starts the new thread for pulling images from CSI cameras.
+     *  @param thread pointer to this class.
+     *  @return nullptr.
+     */
+    static void* startGrabThread(void* thread);
+
     /** The wrapper for left CSI camera. */
     CSI_Camera mLCam;
     /** The wrapper for right CSI camera. */
@@ -194,8 +201,22 @@ private:
     cv::Ptr<cv::cuda::StereoBM> mStereoBM;
     /** Pointer to disparity filter algorithm. */
     cv::Ptr<cv::ximgproc::DisparityWLSFilter> mDispWLSFilter;
-    /** Utility class used for comparing stereo pair frame times to access if they are synchronised or not. */
-    FrameTimeChecker mFTC;
+
+    cv::cuda::GpuMat mRectMaps[2][2];
+
+    std::atomic<bool> mRunThread;
+    pthread_t mThread;
+    bool mRequestedRect;
+
+private:
+    int mLListID;
+    int mRListID;
+    mutable sem_t mSem;
+
+    mutable cv::cuda::GpuMat mImages[2];
+    mutable double mTimes[2];
+
+    mutable pthread_mutex_t mMutex;
 };
 
 #endif // __CSI_STEREOCAMERA_H__

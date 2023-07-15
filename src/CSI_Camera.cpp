@@ -20,8 +20,6 @@
 // SOFTWARE.
 ////////////////////////////////////////////////////////////////////////////////
 
-#include <opencv2/cudaimgproc.hpp>
-#include <opencv2/cudawarping.hpp>
 #include "CSI_Camera.h"
 
 namespace
@@ -33,15 +31,17 @@ namespace
  *  @param imageSize the size to which images should be resized.
  *  @param framerate the camera's framerate in Hz.
  *  @param flip the flip parameter. Usually 0 (no rotation) or 2 (180 deg).
+ *  @param imageType the type of images to convert to. For example, BGR or GRAY8.
  *	@return the string with the command for GStreamer.
  */
-std::string gstreamer_pipeline(const uint8_t id, const uint8_t mode, const cv::Size& imageSize,
-                               const uint8_t framerate, const uint8_t flip)
+std::string gstreamerPipeline(const uint8_t id, const uint8_t mode, const cv::Size& imageSize,
+                               const uint8_t framerate, const uint8_t flip, const std::string& imageType = "BGR")
 {
     char text[512];
+    memset(text, '\0', 512);
     sprintf(text, "nvarguscamerasrc sensor-id=%u sensor-mode=%u ! video/x-raw(memory:NVMM), format=(string)NV12, framerate=(fraction)%u/1 ! "
                   "nvvidconv flip-method=%d ! video/x-raw, width=%d, height=%d, format=(string)BGRx ! videoconvert ! video/x-raw, "
-                  "format=(string)BGR ! appsink", id, mode, framerate, flip, imageSize.width, imageSize.height);
+                  "format=(string)%s ! appsink", id, mode, framerate, flip, imageSize.width, imageSize.height, imageType.c_str());
 #ifdef LOG
     printf("%s\n", text);
 #endif /* LOG */
@@ -49,25 +49,29 @@ std::string gstreamer_pipeline(const uint8_t id, const uint8_t mode, const cv::S
 }
 } /* end of the anonymous namespace */
 
-CSI_Camera::CSI_Camera(const cv::Size& imageSize)
-: mID(0), mThreadRun(false), mThread(0), mFrameTime(-1.0), mCapture(),
-  mImg(imageSize, CV_8UC3), mGrey(imageSize, CV_8UC1), mRectified(imageSize, CV_8UC1)
+CSI_Camera::CSI_Camera()
+: GenericTalker<const uint8_t, const double, const cv::cuda::GpuMat&>(), mID(0), mImgSize(), mColour(true), mThreadRun(false), mThread(0), mCapture()
 {
-    pthread_mutex_init(&mMutex, nullptr);
 }
 
 CSI_Camera::~CSI_Camera()
 {
 	stopCamera();
-    pthread_mutex_destroy(&mMutex);
 }
 
-bool CSI_Camera::startCamera(const uint8_t framerate, const uint8_t mode, const uint8_t id, const uint8_t flip)
+bool CSI_Camera::startCamera(const cv::Size& imageSize, const uint8_t framerate, const uint8_t mode, 
+                             const uint8_t id, const uint8_t flip, const bool colour)
 {
+    if (isInitialised())
+    {
+        stopCamera();
+    }
+    mImgSize = imageSize;
+    mColour = colour;
 	mID = id;
 	mThreadRun = true;
-	mCapture.open(gstreamer_pipeline(mID, mode, mImg.size(), framerate, flip), cv::CAP_GSTREAMER);
-    return (mCapture.isOpened() && (0 == pthread_create(&mThread, nullptr, CSI_Camera::startThread, this)));
+	mCapture.open(gstreamerPipeline(mID, mode, imageSize, framerate, flip, colour ? "BGR" : "GRAY8"), cv::CAP_GSTREAMER);
+    return (isInitialised() && (0 == pthread_create(&mThread, nullptr, CSI_Camera::startGrabThread, this)));
 }
 
 void CSI_Camera::stopCamera()
@@ -82,55 +86,6 @@ void CSI_Camera::stopCamera()
     {
     	mCapture.release();
     }
-}
-
-double CSI_Camera::getRawImage(cv::Mat& image) const
-{
-    double time = -1.0;
-    int errorCode = pthread_mutex_lock(&mMutex);
-    if (0 == errorCode)
-    {
-        mImg.download(image);
-        time = mFrameTime;
-        pthread_mutex_unlock(&mMutex);
-    }
-#ifdef LOG
-    else
-    {
-        printf("getRawImage :: ID: %d -- Mutex Lock error %d \n", mID, errorCode);
-    }
-#endif /* LOG */
-    return time;
-}
-
-void CSI_Camera::rectifyImage()
-{
-	cv::cuda::remap(mGrey, mRectified, mRMap[0], mRMap[1], cv::INTER_LINEAR);
-}
-
-void CSI_Camera::setRMap(const cv::Mat& xmap, const cv::Mat& ymap)
-{
-    mRMap[0].upload(xmap);
-    mRMap[1].upload(ymap);
-}
-
-double CSI_Camera::getGreyscale(cv::cuda::GpuMat& grey) const
-{
-    double time = -1.0;
-    int errorCode = pthread_mutex_lock(&mMutex);
-    if (0 == errorCode)
-    {
-        cv::cuda::cvtColor(mImg, grey, cv::COLOR_BGR2GRAY);
-        time = mFrameTime;
-        pthread_mutex_unlock(&mMutex);
-    }
-#ifdef LOG
-    else
-    {
-        printf("getGreyscale :: ID: %d -- Mutex Lock error %d \n", mID, errorCode);
-    }
-#endif /* LOG */
-    return time;
 }
 
 uint8_t CSI_Camera::getSizeForMode(const uint8_t mode, cv::Size& size)
@@ -170,34 +125,21 @@ uint8_t CSI_Camera::getSizeForMode(const uint8_t mode, cv::Size& size)
     return framerate;
 }
 
-void CSI_Camera::mainThreadBody()
+void CSI_Camera::grabThreadBody()
 {
-    int errorCode;
-    timespec time;
-    time.tv_sec = 1;
-    time.tv_nsec = 0;
-    while (mThreadRun)
+    cv::cuda::GpuMat image(getSize(), getColour() ? CV_8UC3 : CV_8UC1);
+    while (isRun())
     {
-        mCapture.grab();
-        errorCode = pthread_mutex_timedlock(&mMutex, &time);
-        if (0 == errorCode)
+        if (mCapture.read(image))
         {
-            mCapture.retrieve(mImg);
-            mFrameTime = mCapture.get(cv::CAP_PROP_POS_MSEC);
-            pthread_mutex_unlock(&mMutex);
+            this->notifyListeners(getId(), mCapture.get(cv::CAP_PROP_POS_MSEC), image);
         }
-#ifdef LOG
-        else
-        {
-            printf("ID: %d -- Mutex Lock error %d \n", mID, errorCode);
-        }
-#endif /* LOG */
     }
 }
 
-void* CSI_Camera::startThread(void* thread)
+void* CSI_Camera::startGrabThread(void* thread)
 {
     CSI_Camera* camera = static_cast<CSI_Camera*>(thread);
-    camera->mainThreadBody();
+    camera->grabThreadBody();
     return nullptr;
 }
