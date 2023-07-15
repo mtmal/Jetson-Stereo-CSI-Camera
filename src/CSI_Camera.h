@@ -38,7 +38,7 @@
  *
  * @note this class was tested with IMX219-83 camera.
  */
-class CSI_Camera : public GenericTalker<const uint8_t, const double, const cv::cuda::GpuMat&>
+class CSI_Camera : public GenericTalker<const uint8_t, const double, const cv::cuda::HostMem&>
 {
 public:
     /** Camera's focal length in metres. */
@@ -119,23 +119,7 @@ protected:
      */
     inline bool isRun() const
     {
-        return mThreadRun;
-    }
-
-    /**
-     *  @return reference the the OpenCV VideoCapture class.
-     */
-    inline cv::VideoCapture& getCapture()
-    { 
-        return mCapture;
-    }
-
-    /**
-     *  @return const reference the the OpenCV VideoCapture class.
-     */
-    inline constexpr const cv::VideoCapture& getCapture() const
-    { 
-        return mCapture; 
+        return mThreadRun.load(std::memory_order_relaxed);
     }
 
     /**

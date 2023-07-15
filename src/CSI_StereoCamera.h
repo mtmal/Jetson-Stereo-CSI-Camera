@@ -65,8 +65,8 @@ namespace cv
  * TODO: implement disparity filter using CUDA.
  * TODO: add functionality to reproject disparity to point cloud.
  */
-class CSI_StereoCamera : public IGenericListener<const uint8_t, const double, const cv::cuda::GpuMat&>,
-                         public GenericTalker<const double, const cv::cuda::GpuMat&, const cv::cuda::GpuMat&>
+class CSI_StereoCamera : public IGenericListener<const uint8_t, const double, const cv::cuda::HostMem&>,
+                         public GenericTalker<const double, const cv::cuda::HostMem&, const cv::cuda::HostMem&>
 {
 public:
 	/**
@@ -152,16 +152,16 @@ public:
      *  @param rImg undistorted image from the right camera.
      *  @param[out] disparity the preallocated buffer for disparity map.
      */
-    void computeDisp(const bool filter, const cv::cuda::GpuMat& lImg, const cv::cuda::GpuMat& rImg, cv::Mat& disparity);
+    void computeDisp(const bool filter, const cv::cuda::HostMem& lImg, const cv::cuda::HostMem& rImg, cv::Mat& disparity);
 
     // override
-    void update(const uint8_t camId, const double imgTime, const cv::cuda::GpuMat& image) const;
+    void update(const uint8_t camId, const double imgTime, const cv::cuda::HostMem& image) const;
 
 protected:
     /**
      * The main body of the thread that constantly retrieves the latest image from CSI cameras.
      */
-    void grabThreadBody();
+    void processThreadBody();
 
     /**
      *  @return true if the main thread should be running.
@@ -171,51 +171,57 @@ protected:
         return mRunThread.load(std::memory_order_relaxed);
     }
 
-protected:
+private:
     /**
      * Starts the new thread for pulling images from CSI cameras.
      *  @param thread pointer to this class.
      *  @return nullptr.
      */
-    static void* startGrabThread(void* thread);
+    static void* startProcessThread(void* thread);
 
+    /** The size of images. */
+    cv::Size mImageSize;
+    /** Flag indicating if the main thread should run. */
+    std::atomic<bool> mRunThread;
+    /** The main thread. */
+    pthread_t mThread;
+    /** Flag to indicate if rectified images should be requested. */
+    bool mRequestedRect;
     /** The wrapper for left CSI camera. */
     CSI_Camera mLCam;
+    /** Listener ID for left camera. */
+    int mLListID;
     /** The wrapper for right CSI camera. */
     CSI_Camera mRCam;
-    /** GPU-allocated buffer for initial disparity map. */
-    cv::cuda::GpuMat mDisparity;
-    /** GPU-allocated buffer for the result of median filtering on left image. */
-    cv::cuda::GpuMat mLeftGPU;
-    /** GPU-allocated buffer for the result of median filtering on right image. */
-    cv::cuda::GpuMat mRightGPU;
-    /** CPU-allocated buffer for left camera image used in disparity map filtering. */
-    cv::Mat mLeftCPU;
-    /** CPU-allocated buffer for the disparity map used in filtering. */
-    cv::Mat mDisparityCPU;
-    /** CPU-allocated buffer for the right-left disparity used in filtering. */
-    cv::Mat mDisparityRLCPU;
+    /** Listener ID for right camera. */
+    int mRListID;
+    /** Shared buffer for initial disparity map. */
+    cv::cuda::HostMem mDisparity;
+    /** Shared buffer for the result of median filtering on left image. */
+    cv::cuda::HostMem mLeftGPU;
+    /** Shared buffer for the result of median filtering on right image. */
+    cv::cuda::HostMem mRightGPU;
+    /** Buffer for flipped left camera image. */
+    cv::cuda::GpuMat mFlippedLeft;
+    /** Buffer for flipped right camera image. */
+    cv::cuda::GpuMat mFlippedRight;
+    /** Shared buffer for the right-left disparity used in filtering. */
+    cv::cuda::HostMem mDisparityRLCPU;
     /** Pointer to CUDA-enabled median filter. */
     cv::Ptr<cv::cuda::Filter> mMedianFilter;
     /** Pointer to CUDA-enabled stereo block-matching algorithm. */
     cv::Ptr<cv::cuda::StereoBM> mStereoBM;
     /** Pointer to disparity filter algorithm. */
     cv::Ptr<cv::ximgproc::DisparityWLSFilter> mDispWLSFilter;
-
-    cv::cuda::GpuMat mRectMaps[2][2];
-
-    std::atomic<bool> mRunThread;
-    pthread_t mThread;
-    bool mRequestedRect;
-
-private:
-    int mLListID;
-    int mRListID;
+    /** Shared buffers for rectification maps. */
+    cv::cuda::HostMem mRectMaps[2][2];
+    /** Semaphore for threads synchronisation. */
     mutable sem_t mSem;
-
-    mutable cv::cuda::GpuMat mImages[2];
+    /** Shared buffer for left and right camera images. */
+    mutable cv::cuda::HostMem mImages[2];
+    /** Images timestamps in ms. */
     mutable double mTimes[2];
-
+    /** The lock */
     mutable pthread_mutex_t mMutex;
 };
 

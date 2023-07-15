@@ -21,6 +21,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 #include <unistd.h>
+#include <opencv2/cudaarithm.hpp>
 #include <opencv2/cudastereo.hpp>
 #include <opencv2/ximgproc/disparity_filter.hpp>
 #include <opencv2/cudafilters.hpp>
@@ -58,22 +59,26 @@ void scaleCameraMatrix(const cv::Size& imgSize, const cv::Size& maxSize, cv::Mat
 } /* end of the anonymous namespace */
 
 CSI_StereoCamera::CSI_StereoCamera(const cv::Size& imageSize)
-: IGenericListener<const uint8_t, const double, const cv::cuda::GpuMat&>(), 
-  GenericTalker<const double, const cv::cuda::GpuMat&, const cv::cuda::GpuMat&>(),
-  mLCam(), mRCam(), mDisparity(imageSize, CV_8UC1), mLeftGPU(imageSize, CV_8UC1),
-  mRightGPU(imageSize, CV_8UC1), mLeftCPU(imageSize, CV_8UC1), mDisparityCPU(imageSize, CV_8UC1),
-  mDisparityRLCPU(imageSize, CV_8UC1), mMedianFilter(cv::cuda::createMedianFilter(CV_8UC1, 9)),
+: IGenericListener<const uint8_t, const double, const cv::cuda::HostMem&>(), 
+  GenericTalker<const double, const cv::cuda::HostMem&, const cv::cuda::HostMem&>(),
+  mImageSize(imageSize), mRunThread(false), mThread(0), mRequestedRect(false), 
+  mLCam(), mLListID(0), mRCam(), mRListID(0), 
+  mDisparity(imageSize, CV_8UC1, cv::cuda::HostMem::AllocType::SHARED), 
+  mLeftGPU(imageSize, CV_8UC1, cv::cuda::HostMem::AllocType::SHARED),
+  mRightGPU(imageSize, CV_8UC1, cv::cuda::HostMem::AllocType::SHARED),
+  mFlippedLeft(imageSize, CV_8UC1), mFlippedRight(imageSize, CV_8UC1),
+  mDisparityRLCPU(imageSize, CV_8UC1, cv::cuda::HostMem::AllocType::SHARED), 
+  mMedianFilter(cv::cuda::createMedianFilter(CV_8UC1, 9)),
   mStereoBM(cv::cuda::createStereoBM(160))
 {
 	mStereoBM->setPreFilterType(1);
 	restartDispFilter(8000.0, 2.0);
-    mRunThread = false;
-    mThread = 0;
-    mRequestedRect = false;
     sem_init(&mSem, 0, 0);
     pthread_mutex_init(&mMutex, nullptr);
-    mLListID = 0;
-    mRListID = 0;
+    mRectMaps[0][0] = cv::cuda::HostMem(mImageSize, CV_32FC1, cv::cuda::HostMem::AllocType::SHARED);
+    mRectMaps[0][1] = cv::cuda::HostMem(mImageSize, CV_32FC1, cv::cuda::HostMem::AllocType::SHARED);
+    mRectMaps[1][0] = cv::cuda::HostMem(mImageSize, CV_32FC1, cv::cuda::HostMem::AllocType::SHARED);
+    mRectMaps[1][1] = cv::cuda::HostMem(mImageSize, CV_32FC1, cv::cuda::HostMem::AllocType::SHARED);
 }
 
 CSI_StereoCamera::~CSI_StereoCamera()
@@ -99,7 +104,7 @@ bool CSI_StereoCamera::startCamera(const cv::Size& imageSize, const uint8_t fram
     {
         mRequestedRect = rectified;
         mRunThread = true;
-        retVal = (0 == pthread_create(&mThread, nullptr, CSI_StereoCamera::startGrabThread, this));
+        retVal = (0 == pthread_create(&mThread, nullptr, CSI_StereoCamera::startProcessThread, this));
 
         if (!retVal)
         {
@@ -108,6 +113,10 @@ bool CSI_StereoCamera::startCamera(const cv::Size& imageSize, const uint8_t fram
         }
         else
         {
+            mImages[0] = cv::cuda::HostMem(imageSize, colour ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED);
+            mImages[1] = cv::cuda::HostMem(imageSize, colour ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED);
+            mLeftGPU = cv::cuda::HostMem(imageSize, colour ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED);
+            mRightGPU = cv::cuda::HostMem(imageSize, colour ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED);
             mLListID = mLCam.registerListener(*this);
             mRListID = mRCam.registerListener(*this);
         }
@@ -154,7 +163,7 @@ bool CSI_StereoCamera::loadCalibration(const std::string& folder)
         fs[CAMERA_MATRIX] >> lCamMat;
         fs[DISTORTION] >> lDist;
         fs.release();
-        scaleCameraMatrix(mLeftGPU.size(), maxSize, lCamMat);
+        scaleCameraMatrix(mImageSize, maxSize, lCamMat);
 
         fs.open(folder + "/" + RIGHT_CALIB_FILE + CALIB_FILE_EXTENSION, cv::FileStorage::READ);
         retVal &= fs.isOpened();
@@ -163,7 +172,7 @@ bool CSI_StereoCamera::loadCalibration(const std::string& folder)
             fs[CAMERA_MATRIX] >> rCamMat;
             fs[DISTORTION] >> rDist;
             fs.release();
-            scaleCameraMatrix(mLeftGPU.size(), maxSize, rCamMat);
+            scaleCameraMatrix(mImageSize, maxSize, rCamMat);
 
             fs.open(folder + "/" + STEREO_CALIB_FILE + CALIB_FILE_EXTENSION, cv::FileStorage::READ);
             retVal &= fs.isOpened();
@@ -177,22 +186,18 @@ bool CSI_StereoCamera::loadCalibration(const std::string& folder)
                 fs[NEW_CAM_MATRIX_RIGHT]>> P2;
                 fs[DISPARITY_TO_DEPTH]  >> Q;
                 fs.release();
-                scaleCameraMatrix(mLeftGPU.size(), maxSize, P1);
-                scaleCameraMatrix(mLeftGPU.size(), maxSize, P2);
+                scaleCameraMatrix(mImageSize, maxSize, P1);
+                scaleCameraMatrix(mImageSize, maxSize, P2);
 
-                initUndistortRectifyMap(lCamMat, lDist, R1, P1, mLeftGPU.size(), CV_32FC1, rectMap[0], rectMap[1]);
-                mRectMaps[0][0].upload(rectMap[0]);
-                mRectMaps[0][1].upload(rectMap[1]);
-                initUndistortRectifyMap(rCamMat, rDist, R2, P2, mLeftGPU.size(), CV_32FC1, rectMap[0], rectMap[1]);
-                mRectMaps[1][0].upload(rectMap[0]);
-                mRectMaps[1][1].upload(rectMap[1]);
+                initUndistortRectifyMap(lCamMat, lDist, R1, P1, mImageSize, CV_32FC1, mRectMaps[0][0], mRectMaps[0][1]);
+                initUndistortRectifyMap(rCamMat, rDist, R2, P2, mImageSize, CV_32FC1, mRectMaps[1][0], mRectMaps[1][1]);
             }
         }
     }
     return retVal;
 }
 
-void CSI_StereoCamera::computeDisp(const bool filter, const cv::cuda::GpuMat& lImg, const cv::cuda::GpuMat& rImg, cv::Mat& disparity)
+void CSI_StereoCamera::computeDisp(const bool filter, const cv::cuda::HostMem& lImg, const cv::cuda::HostMem& rImg, cv::Mat& disparity)
 {
 	int minDisp;
 	int specklewindowsize;
@@ -216,14 +221,16 @@ void CSI_StereoCamera::computeDisp(const bool filter, const cv::cuda::GpuMat& lI
     	specklewindowsize = mStereoBM->getSpeckleWindowSize();
     	disp12diff = mStereoBM->getDisp12MaxDiff();
 
-    	mDisparity.download(mDisparityCPU);
+    	// mDisparity.download(mDisparityCPU);
 
     	/* We need to change parameters for calculating right-left disparity. */
     	mStereoBM->setMinDisparity(-(mStereoBM->getMinDisparity() + mStereoBM->getNumDisparities()) + 1);
     	mStereoBM->setDisp12MaxDiff(1000000);
 		mStereoBM->setSpeckleWindowSize(0);
 
-		mStereoBM->compute(mRightGPU, mLeftGPU, mDisparity);
+        cv::cuda::flip(mLeftGPU, mFlippedLeft, 1);
+        cv::cuda::flip(mRightGPU, mFlippedRight, 1);
+		mStereoBM->compute(mFlippedRight, mFlippedLeft, mDisparityRLCPU);
 #ifdef LOG
     	int64 time3 = cv::getTickCount();
 #endif /* LOG */
@@ -233,9 +240,7 @@ void CSI_StereoCamera::computeDisp(const bool filter, const cv::cuda::GpuMat& lI
     	mStereoBM->setDisp12MaxDiff(disp12diff);
 		mStereoBM->setSpeckleWindowSize(specklewindowsize);
 
-    	mLeftGPU.download(mLeftCPU);
-    	mDisparity.download(mDisparityRLCPU);
-    	mDispWLSFilter->filter(mDisparityCPU, mLeftCPU, disparity, mDisparityRLCPU);
+    	mDispWLSFilter->filter(mDisparity, mLeftGPU, disparity, mDisparityRLCPU);
 #ifdef LOG
     	int64 time4 = cv::getTickCount();
     	printf("LR Disparity calculated in %f \t RL Disparity calculated in %f \t WLS filter calculated in %f \n",
@@ -246,19 +251,18 @@ void CSI_StereoCamera::computeDisp(const bool filter, const cv::cuda::GpuMat& lI
     }
     else
     {
-    	mDisparity.download(disparity);
+        mDisparity.createMatHeader().copyTo(disparity);
 #ifdef LOG
     	printf("Disparity calculated in %f \n", static_cast<double>(time2 - time1) / cv::getTickFrequency());
 #endif /* LOG */
     }
 }
 
-void CSI_StereoCamera::update(const uint8_t camId, const double imgTime, const cv::cuda::GpuMat& image) const
+void CSI_StereoCamera::update(const uint8_t camId, const double imgTime, const cv::cuda::HostMem& image) const
 {
     static std::atomic<int> counter{0};
     ScopedLock lock(mMutex);
     mTimes[camId] = imgTime;
-    // image.copyTo(mImages[camId]);
     mImages[camId] = image;
 
     if (++counter % 2 == 0)
@@ -267,13 +271,13 @@ void CSI_StereoCamera::update(const uint8_t camId, const double imgTime, const c
     }
 }
 
-void CSI_StereoCamera::grabThreadBody()
+void CSI_StereoCamera::processThreadBody()
 {
     /** Utility class used for comparing stereo pair frame times to access if they are synchronised or not. */
     FrameTimeChecker ftc;
     double meanTime;
-    cv::cuda::GpuMat mLRect(mLCam.getSize(), mLCam.getColour() ? CV_8UC3 : CV_8UC1);
-    cv::cuda::GpuMat mRRect(mRCam.getSize(), mRCam.getColour() ? CV_8UC3 : CV_8UC1);
+    cv::cuda::HostMem mLRect(mImageSize, mLCam.getColour() ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED);
+    cv::cuda::HostMem mRRect(mImageSize, mRCam.getColour() ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED);
 
     while (isRun())
     {
@@ -284,8 +288,8 @@ void CSI_StereoCamera::grabThreadBody()
             {
                 if (!mRequestedRect)
                 {
-                    mImages[0].copyTo(mLRect);
-                    mImages[1].copyTo(mRRect);
+                    mImages[0].swap(mLRect);
+                    mImages[1].swap(mRRect);
                 }
                 else
                 {
@@ -305,9 +309,9 @@ void CSI_StereoCamera::grabThreadBody()
     }
 }
 
-void* CSI_StereoCamera::startGrabThread(void* thread)
+void* CSI_StereoCamera::startProcessThread(void* thread)
 {
     CSI_StereoCamera* camera = static_cast<CSI_StereoCamera*>(thread);
-    camera->grabThreadBody();
+    camera->processThreadBody();
     return nullptr;
 }
