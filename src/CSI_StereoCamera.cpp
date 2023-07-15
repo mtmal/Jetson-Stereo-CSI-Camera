@@ -22,9 +22,10 @@
 
 #include <unistd.h>
 #include <opencv2/cudaarithm.hpp>
+#include <opencv2/cudafilters.hpp>
+#include <opencv2/cudaimgproc.hpp>
 #include <opencv2/cudastereo.hpp>
 #include <opencv2/ximgproc/disparity_filter.hpp>
-#include <opencv2/cudafilters.hpp>
 #include "CameraConstants.h"
 #include "FrameTimeChecker.h"
 #include "CSI_StereoCamera.h"
@@ -64,8 +65,8 @@ CSI_StereoCamera::CSI_StereoCamera(const cv::Size& imageSize)
   mImageSize(imageSize), mRunThread(false), mThread(0), mRequestedRect(false), 
   mLCam(), mLListID(0), mRCam(), mRListID(0), 
   mDisparity(imageSize, CV_8UC1, cv::cuda::HostMem::AllocType::SHARED), 
-  mLeftGPU(imageSize, CV_8UC1, cv::cuda::HostMem::AllocType::SHARED),
-  mRightGPU(imageSize, CV_8UC1, cv::cuda::HostMem::AllocType::SHARED),
+  mLeftGPU(imageSize, CV_8UC1, cv::cuda::HostMem::AllocType::SHARED), 
+  mRightGPU(imageSize, CV_8UC1),
   mFlippedLeft(imageSize, CV_8UC1), mFlippedRight(imageSize, CV_8UC1),
   mDisparityRLCPU(imageSize, CV_8UC1, cv::cuda::HostMem::AllocType::SHARED), 
   mMedianFilter(cv::cuda::createMedianFilter(CV_8UC1, 9)),
@@ -115,8 +116,6 @@ bool CSI_StereoCamera::startCamera(const uint8_t framerate, const uint8_t mode, 
         {
             mImages[0] = cv::cuda::HostMem(mImageSize, colour ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED);
             mImages[1] = cv::cuda::HostMem(mImageSize, colour ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED);
-            mLeftGPU = cv::cuda::HostMem(mImageSize, colour ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED);
-            mRightGPU = cv::cuda::HostMem(mImageSize, colour ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED);
             mLListID = mLCam.registerListener(*this);
             mRListID = mRCam.registerListener(*this);
         }
@@ -203,8 +202,20 @@ void CSI_StereoCamera::computeDisp(const bool filter, const cv::cuda::HostMem& l
 	int specklewindowsize;
 	int disp12diff;
 
-	mMedianFilter->apply(lImg, mLeftGPU);
-	mMedianFilter->apply(rImg, mRightGPU);
+    if (mLCam.getColour())
+    {
+        cv::cuda::GpuMat lMono(mImageSize, CV_8UC1);
+        cv::cuda::GpuMat rMono(mImageSize, CV_8UC1);
+        cv::cuda::cvtColor(lImg, lMono, cv::COLOR_BGR2GRAY, 1);
+        cv::cuda::cvtColor(rImg, rMono, cv::COLOR_BGR2GRAY, 1);
+        mMedianFilter->apply(lMono, mLeftGPU);
+        mMedianFilter->apply(rMono, mRightGPU);
+    }
+    else
+    {
+        mMedianFilter->apply(lImg, mLeftGPU);
+        mMedianFilter->apply(rImg, mRightGPU);
+    }
 
 #ifdef LOG
 	int64 time1 = cv::getTickCount();

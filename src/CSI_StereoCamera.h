@@ -198,8 +198,8 @@ private:
     cv::cuda::HostMem mDisparity;
     /** Shared buffer for the result of median filtering on left image. */
     cv::cuda::HostMem mLeftGPU;
-    /** Shared buffer for the result of median filtering on right image. */
-    cv::cuda::HostMem mRightGPU;
+    /** GPU buffer for the result of median filtering on right image. */
+    cv::cuda::GpuMat mRightGPU;
     /** Buffer for flipped left camera image. */
     cv::cuda::GpuMat mFlippedLeft;
     /** Buffer for flipped right camera image. */

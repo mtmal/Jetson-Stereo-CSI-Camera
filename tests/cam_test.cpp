@@ -220,8 +220,6 @@ public:
         mTimestamp = time;
         mLeft = left.createMatHeader();
         mRight = right.createMatHeader();
-        // left.download(mLeft);
-        // right.download(mRight);
         pthread_mutex_unlock(&mLock);
         printf("%f: Disparity calculated in %f \n", 
                     static_cast<double>(time1) / cv::getTickFrequency(),
