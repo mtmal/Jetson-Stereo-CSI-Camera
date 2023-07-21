@@ -50,8 +50,13 @@ std::string gstreamerPipeline(const uint8_t id, const uint8_t mode, const cv::Si
 } /* end of the anonymous namespace */
 
 CSI_Camera::CSI_Camera()
-: GenericTalker<const uint8_t, const double, const cv::cuda::HostMem&>(), 
-  mID(0), mImgSize(), mColour(true), mThreadRun(false), mThread(0), mCapture()
+: GenericTalker<CameraData>(), 
+  mID(0), 
+  mImgSize(), 
+  mColour(true), 
+  mThreadRun(false), 
+  mThread(0), 
+  mCapture()
 {
 }
 
@@ -128,12 +133,14 @@ uint8_t CSI_Camera::getSizeForMode(const uint8_t mode, cv::Size& size)
 
 void CSI_Camera::grabThreadBody()
 {
-    cv::cuda::HostMem image(getSize(), getColour() ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED);
+    CameraData camData(getId(), 0.0, cv::cuda::HostMem(getSize(), getColour() ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED));
+    
     while (isRun())
     {
-        if (mCapture.read(image))
+        if (mCapture.read(camData.mImage))
         {
-            this->notifyListeners(getId(), mCapture.get(cv::CAP_PROP_POS_MSEC), image);
+            camData.mTimestamp = mCapture.get(cv::CAP_PROP_POS_MSEC);
+            this->notifyListeners(camData);
         }
     }
 }

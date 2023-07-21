@@ -31,6 +31,34 @@
 
 
 /**
+ * Data structure for image data used in updating listeners.
+ */
+struct CameraData
+{
+    /** Camera ID. */
+    uint8_t mID;
+    /** Timestamp in ms of the associated image. */
+    double mTimestamp;
+    /** Image data allocated with SHARED buffer between CPU (cv::Mat) and GPU (cv::cuda::GpuMat). */
+    cv::cuda::HostMem mImage;
+
+    CameraData(){};
+    CameraData(const uint8_t id, const double timestamp, const cv::cuda::HostMem& image)
+    : mID(id), mTimestamp(timestamp), mImage(image) {};
+
+    /**
+     * Deep copy of the image buffer.
+     *  @param[out] out result of a deep copy
+     */
+    void copyTo(CameraData& out)
+    {
+        out.mID = mID;
+        out.mTimestamp = mTimestamp;
+        out.mImage = mImage.clone();
+    }
+};
+
+/**
  * This class provides communication with CSI camera via OpenCV.
  * It utilises CUDA-enabled functions for rectification and disparity generation.
  * It constantly pulls images from the camera into a buffer,
@@ -38,7 +66,7 @@
  *
  * @note this class was tested with IMX219-83 camera.
  */
-class CSI_Camera : public GenericTalker<const uint8_t, const double, const cv::cuda::HostMem&>
+class CSI_Camera : public GenericTalker<CameraData>
 {
 public:
     /** Camera's focal length in metres. */

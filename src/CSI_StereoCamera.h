@@ -65,8 +65,8 @@ namespace cv
  * TODO: implement disparity filter using CUDA.
  * TODO: add functionality to reproject disparity to point cloud.
  */
-class CSI_StereoCamera : public IGenericListener<const uint8_t, const double, const cv::cuda::HostMem&>,
-                         public GenericTalker<const double, const cv::cuda::HostMem&, const cv::cuda::HostMem&>
+class CSI_StereoCamera : public IGenericListener<CameraData>,
+                         public GenericTalker<CameraData, CameraData>
 {
 public:
 	/**
@@ -154,7 +154,7 @@ public:
     void computeDisp(const bool filter, const cv::cuda::HostMem& lImg, const cv::cuda::HostMem& rImg, cv::Mat& disparity);
 
     // override
-    void update(const uint8_t camId, const double imgTime, const cv::cuda::HostMem& image) const;
+    void update(const CameraData& camData);
 
 protected:
     /**
@@ -215,13 +215,11 @@ private:
     /** Shared buffers for rectification maps. */
     cv::cuda::HostMem mRectMaps[2][2];
     /** Semaphore for threads synchronisation. */
-    mutable sem_t mSem;
-    /** Shared buffer for left and right camera images. */
-    mutable cv::cuda::HostMem mImages[2];
-    /** Images timestamps in ms. */
-    mutable double mTimes[2];
+    sem_t mSem;
+    /** Shared buffers for left and right camera data. */
+    CameraData mCamDatas[2];
     /** The lock */
-    mutable pthread_mutex_t mMutex;
+    pthread_mutex_t mMutex;
 };
 
 #endif // __CSI_STEREOCAMERA_H__

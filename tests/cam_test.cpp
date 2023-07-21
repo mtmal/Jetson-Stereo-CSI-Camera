@@ -193,12 +193,15 @@ void createSlides(CSI_StereoCamera& stereoCam)
     cv::createTrackbar("Filter Sigma Colour", "Disparity", &sigma, 3000, onTrackbar, &stereoCam);
 }
 
-class MyListener : public IGenericListener<const double, const cv::cuda::HostMem&, const cv::cuda::HostMem&>
+class MyListener : public IGenericListener<CameraData, CameraData>
 {
 public:
-    MyListener(const cv::Size& imageSize, CSI_StereoCamera& stereoCam) : 
-        IGenericListener<const double, const cv::cuda::HostMem&, const cv::cuda::HostMem&>(),
-        mStereoCam(stereoCam), mLeft(imageSize, CV_8UC1), mRight(imageSize, CV_8UC1), mDisparity(imageSize, CV_8UC1)
+    MyListener(const cv::Size& imageSize, CSI_StereoCamera& stereoCam)
+    : IGenericListener<CameraData, CameraData>(),
+      mStereoCam(stereoCam), 
+      mLeft(imageSize, CV_8UC1), 
+      mRight(imageSize, CV_8UC1), 
+      mDisparity(imageSize, CV_8UC1)
     {
         pthread_mutex_init(&mLock, nullptr);
     }
@@ -208,18 +211,18 @@ public:
         pthread_mutex_destroy(&mLock);
     }
 
-    void update(const double time, const cv::cuda::HostMem& left, const cv::cuda::HostMem& right) const
+    void update(const CameraData& left, const CameraData& right)
     {
         int64 time2;
         int64 time1;
 
         time1 = cv::getTickCount();
-        mStereoCam.computeDisp(useFiltered, left, right, mDisparity);
+        mStereoCam.computeDisp(useFiltered, left.mImage, right.mImage, mDisparity);
         time2 = cv::getTickCount();
         pthread_mutex_lock(&mLock);
-        mTimestamp = time;
-        mLeft = left.createMatHeader();
-        mRight = right.createMatHeader();
+        mTimestamp = (left.mTimestamp + right.mTimestamp) * 0.5;
+        mLeft = left.mImage.createMatHeader();
+        mRight = right.mImage.createMatHeader();
         pthread_mutex_unlock(&mLock);
         printf("%f: Disparity calculated in %f \n", 
                     static_cast<double>(time1) / cv::getTickFrequency(),

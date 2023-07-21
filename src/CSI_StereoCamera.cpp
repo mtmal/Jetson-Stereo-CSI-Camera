@@ -60,10 +60,16 @@ void scaleCameraMatrix(const cv::Size& imgSize, const cv::Size& maxSize, cv::Mat
 } /* end of the anonymous namespace */
 
 CSI_StereoCamera::CSI_StereoCamera(const cv::Size& imageSize)
-: IGenericListener<const uint8_t, const double, const cv::cuda::HostMem&>(), 
-  GenericTalker<const double, const cv::cuda::HostMem&, const cv::cuda::HostMem&>(),
-  mImageSize(imageSize), mRunThread(false), mThread(0), mRequestedRect(false), 
-  mLCam(), mLListID(0), mRCam(), mRListID(0), 
+: IGenericListener<CameraData>(), 
+  GenericTalker<CameraData, CameraData>(),
+  mImageSize(imageSize), 
+  mRunThread(false), 
+  mThread(0), 
+  mRequestedRect(false), 
+  mLCam(), 
+  mLListID(0), 
+  mRCam(), 
+  mRListID(0), 
   mDisparity(imageSize, CV_8UC1, cv::cuda::HostMem::AllocType::SHARED), 
   mLeftGPU(imageSize, CV_8UC1, cv::cuda::HostMem::AllocType::SHARED), 
   mRightGPU(imageSize, CV_8UC1),
@@ -114,8 +120,8 @@ bool CSI_StereoCamera::startCamera(const uint8_t framerate, const uint8_t mode, 
         }
         else
         {
-            mImages[0] = cv::cuda::HostMem(mImageSize, colour ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED);
-            mImages[1] = cv::cuda::HostMem(mImageSize, colour ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED);
+            mCamDatas[0] = CameraData(lCamID, 0, cv::cuda::HostMem(mImageSize, colour ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED));
+            mCamDatas[1] = CameraData(rCamID, 0, cv::cuda::HostMem(mImageSize, colour ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED));
             mLListID = mLCam.registerListener(*this);
             mRListID = mRCam.registerListener(*this);
         }
@@ -269,13 +275,12 @@ void CSI_StereoCamera::computeDisp(const bool filter, const cv::cuda::HostMem& l
     }
 }
 
-void CSI_StereoCamera::update(const uint8_t camId, const double imgTime, const cv::cuda::HostMem& image) const
+void CSI_StereoCamera::update(const CameraData& camData)
 {
     static std::atomic<int> counter{0};
     ScopedLock lock(mMutex);
-    mTimes[camId] = imgTime;
-    mImages[camId] = image;
 
+    mCamDatas[camData.mID] = camData;
     if (++counter % 2 == 0)
     {
         sem_post(&mSem);
@@ -286,30 +291,30 @@ void CSI_StereoCamera::processThreadBody()
 {
     /** Utility class used for comparing stereo pair frame times to access if they are synchronised or not. */
     FrameTimeChecker ftc;
-    double meanTime;
-    cv::cuda::HostMem mLRect(mImageSize, mLCam.getColour() ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED);
-    cv::cuda::HostMem mRRect(mImageSize, mRCam.getColour() ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED);
+    CameraData lCamData(mLCam.getId(), 0.0, cv::cuda::HostMem(mImageSize, mLCam.getColour() ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED));
+    CameraData rCamData(mRCam.getId(), 0.0, cv::cuda::HostMem(mImageSize, mRCam.getColour() ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED));
 
     while (isRun())
     {
         if (0 == sem_wait(&mSem))
         {
             pthread_mutex_lock(&mMutex);
-            if (mTimes[0] > 0 && mTimes[1] > 0 && ftc.checkTimes(mTimes[0], mTimes[1]))
+            if (mCamDatas[0].mTimestamp > 0 && 
+                mCamDatas[1].mTimestamp > 0 && 
+                ftc.checkTimes(mCamDatas[0].mTimestamp, mCamDatas[1].mTimestamp))
             {
                 if (!mRequestedRect)
                 {
-                    mImages[0].swap(mLRect);
-                    mImages[1].swap(mRRect);
+                    mCamDatas[0].mImage.swap(lCamData.mImage);
+                    mCamDatas[1].mImage.swap(rCamData.mImage);
                 }
                 else
                 {
-                    cv::cuda::remap(mImages[0], mLRect, mRectMaps[0][0], mRectMaps[0][1], cv::INTER_LINEAR);
-                    cv::cuda::remap(mImages[1], mRRect, mRectMaps[1][0], mRectMaps[1][1], cv::INTER_LINEAR);
+                    cv::cuda::remap(mCamDatas[0].mImage, lCamData.mImage, mRectMaps[0][0], mRectMaps[0][1], cv::INTER_LINEAR);
+                    cv::cuda::remap(mCamDatas[1].mImage, rCamData.mImage, mRectMaps[1][0], mRectMaps[1][1], cv::INTER_LINEAR);
                 }
-                meanTime = (mTimes[0] + mTimes[1]) * 0.5;
                 pthread_mutex_unlock(&mMutex);
-                this->notifyListeners(meanTime, mLRect, mRRect);
+                this->notifyListeners(lCamData, rCamData);
             }
             else
             {
