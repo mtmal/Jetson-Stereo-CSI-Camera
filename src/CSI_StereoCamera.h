@@ -154,7 +154,7 @@ public:
     void computeDisp(const bool filter, const cv::cuda::HostMem& lImg, const cv::cuda::HostMem& rImg, cv::Mat& disparity);
 
     // override
-    void update(const CameraData& camData);
+    void update(const CameraData& camData) override;
 
 protected:
     /**

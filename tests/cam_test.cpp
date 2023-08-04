@@ -211,7 +211,7 @@ public:
         pthread_mutex_destroy(&mLock);
     }
 
-    void update(const CameraData& left, const CameraData& right)
+    void update(const CameraData& left, const CameraData& right) override
     {
         int64 time2;
         int64 time1;
