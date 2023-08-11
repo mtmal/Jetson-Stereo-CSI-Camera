@@ -35,16 +35,14 @@
  */
 struct CameraData
 {
-    /** Camera ID. */
-    uint8_t mID;
+    /** IDs of cameras that provided images. */
+    std::vector<uint8_t> mID;
     /** Timestamp in ms of the associated image. */
-    double mTimestamp;
-    /** Image data allocated with SHARED buffer between CPU (cv::Mat) and GPU (cv::cuda::GpuMat). */
-    cv::cuda::HostMem mImage;
+    std::vector<double> mTimestamp;
+    /** Images data allocated with SHARED buffer between CPU (cv::Mat) and GPU (cv::cuda::GpuMat). */
+    std::vector<cv::cuda::HostMem> mImage;
 
     CameraData(){};
-    CameraData(const uint8_t id, const double timestamp, const cv::cuda::HostMem& image)
-    : mID(id), mTimestamp(timestamp), mImage(image) {};
 
     /**
      * Deep copy of the image buffer.
@@ -54,7 +52,11 @@ struct CameraData
     {
         out.mID = mID;
         out.mTimestamp = mTimestamp;
-        out.mImage = mImage.clone();
+        out.mImage.clear();
+        for (const cv::cuda::HostMem& img : mImage)
+        {
+            out.mImage.emplace_back(img.clone());
+        }
     }
 };
 

@@ -61,7 +61,7 @@ void scaleCameraMatrix(const cv::Size& imgSize, const cv::Size& maxSize, cv::Mat
 
 CSI_StereoCamera::CSI_StereoCamera(const cv::Size& imageSize)
 : IGenericListener<CameraData>(), 
-  GenericTalker<CameraData, CameraData>(),
+  GenericTalker<CameraData>(),
   mImageSize(imageSize), 
   mRunThread(false), 
   mThread(0), 
@@ -120,8 +120,11 @@ bool CSI_StereoCamera::startCamera(const uint8_t framerate, const uint8_t mode, 
         }
         else
         {
-            mCamDatas[0] = CameraData(lCamID, 0, cv::cuda::HostMem(mImageSize, colour ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED));
-            mCamDatas[1] = CameraData(rCamID, 0, cv::cuda::HostMem(mImageSize, colour ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED));
+            mCamDatas.mID = {lCamID, rCamID};
+            mCamDatas.mTimestamp = {0.0, 0.0};
+            mCamDatas.mImage = {cv::cuda::HostMem(mImageSize, colour ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED),
+                                cv::cuda::HostMem(mImageSize, colour ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED)};
+
             mLListID = mLCam.registerListener(*this);
             mRListID = mRCam.registerListener(*this);
         }
@@ -280,7 +283,8 @@ void CSI_StereoCamera::update(const CameraData& camData)
     static std::atomic<int> counter{0};
     ScopedLock lock(mMutex);
 
-    mCamDatas[camData.mID] = camData;
+    mCamDatas.mTimestamp[camData.mID[0]] = camData.mTimestamp[0];
+    mCamDatas.mImage[camData.mID[0]] = camData.mImage[0];
     if (++counter % 2 == 0)
     {
         sem_post(&mSem);
@@ -291,30 +295,34 @@ void CSI_StereoCamera::processThreadBody()
 {
     /** Utility class used for comparing stereo pair frame times to access if they are synchronised or not. */
     FrameTimeChecker ftc;
-    CameraData lCamData(mLCam.getId(), 0.0, cv::cuda::HostMem(mImageSize, mLCam.getColour() ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED));
-    CameraData rCamData(mRCam.getId(), 0.0, cv::cuda::HostMem(mImageSize, mRCam.getColour() ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED));
+
+    CameraData camData;
+    camData.mID = {mLCam.getId(), mRCam.getId()};
+    camData.mTimestamp = {0.0, 0.0};
+    camData.mImage = {cv::cuda::HostMem(mImageSize, mLCam.getColour() ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED),
+                      cv::cuda::HostMem(mImageSize, mRCam.getColour() ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED)};
 
     while (isRun())
     {
         if (0 == sem_wait(&mSem))
         {
             pthread_mutex_lock(&mMutex);
-            if (mCamDatas[0].mTimestamp > 0 && 
-                mCamDatas[1].mTimestamp > 0 && 
-                ftc.checkTimes(mCamDatas[0].mTimestamp, mCamDatas[1].mTimestamp))
+            if (mCamDatas.mTimestamp[0] > 0 && 
+                mCamDatas.mTimestamp[1] > 0 && 
+                ftc.checkTimes(mCamDatas.mTimestamp[0], mCamDatas.mTimestamp[1]))
             {
                 if (!mRequestedRect)
                 {
-                    mCamDatas[0].mImage.swap(lCamData.mImage);
-                    mCamDatas[1].mImage.swap(rCamData.mImage);
+                    mCamDatas.mImage[0].swap(camData.mImage[0]);
+                    mCamDatas.mImage[1].swap(camData.mImage[1]);
                 }
                 else
                 {
-                    cv::cuda::remap(mCamDatas[0].mImage, lCamData.mImage, mRectMaps[0][0], mRectMaps[0][1], cv::INTER_LINEAR);
-                    cv::cuda::remap(mCamDatas[1].mImage, rCamData.mImage, mRectMaps[1][0], mRectMaps[1][1], cv::INTER_LINEAR);
+                    cv::cuda::remap(mCamDatas.mImage[0], camData.mImage[0], mRectMaps[0][0], mRectMaps[0][1], cv::INTER_LINEAR);
+                    cv::cuda::remap(mCamDatas.mImage[1], camData.mImage[1], mRectMaps[1][0], mRectMaps[1][1], cv::INTER_LINEAR);
                 }
                 pthread_mutex_unlock(&mMutex);
-                this->notifyListeners(lCamData, rCamData);
+                this->notifyListeners(camData);
             }
             else
             {

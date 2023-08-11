@@ -133,13 +133,16 @@ uint8_t CSI_Camera::getSizeForMode(const uint8_t mode, cv::Size& size)
 
 void CSI_Camera::grabThreadBody()
 {
-    CameraData camData(getId(), 0.0, cv::cuda::HostMem(getSize(), getColour() ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED));
+    CameraData camData;
+    camData.mID.push_back(getId());
+    camData.mTimestamp.push_back(0.0);
+    camData.mImage.push_back(cv::cuda::HostMem(getSize(), getColour() ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED));
     
     while (isRun())
     {
-        if (mCapture.read(camData.mImage))
+        if (mCapture.read(camData.mImage[0]))
         {
-            camData.mTimestamp = mCapture.get(cv::CAP_PROP_POS_MSEC);
+            camData.mTimestamp[0] = mCapture.get(cv::CAP_PROP_POS_MSEC);
             this->notifyListeners(camData);
         }
     }

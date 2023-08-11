@@ -66,7 +66,7 @@ namespace cv
  * TODO: add functionality to reproject disparity to point cloud.
  */
 class CSI_StereoCamera : public IGenericListener<CameraData>,
-                         public GenericTalker<CameraData, CameraData>
+                         public GenericTalker<CameraData>
 {
 public:
 	/**
@@ -217,7 +217,7 @@ private:
     /** Semaphore for threads synchronisation. */
     sem_t mSem;
     /** Shared buffers for left and right camera data. */
-    CameraData mCamDatas[2];
+    CameraData mCamDatas;
     /** The lock */
     pthread_mutex_t mMutex;
 };

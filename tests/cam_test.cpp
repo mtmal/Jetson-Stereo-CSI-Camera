@@ -56,6 +56,7 @@ void printHelp(const char* name)
 {
 	printf("Usage: %s [options] \n", name);
 	printf("    -h, --help      -> prints this information \n");
+	printf("    -s, --single    -> starts a single camera with provided ID, as opposed to stereo. Negative for stereo, default: -1 \n");
 	printf("    -m, --mode      -> sets the specific camera mode, default: 0 \n");
 	printf("    -f, --framerate -> sets the camera framerate in Hz, default: 20 \n");
 	printf("    -c, --cols      -> sets the number of columns (width) in resized image, default: 640 \n");
@@ -193,11 +194,12 @@ void createSlides(CSI_StereoCamera& stereoCam)
     cv::createTrackbar("Filter Sigma Colour", "Disparity", &sigma, 3000, onTrackbar, &stereoCam);
 }
 
-class MyListener : public IGenericListener<CameraData, CameraData>
+class MyListener : public IGenericListener<CameraData>
 {
 public:
-    MyListener(const cv::Size& imageSize, CSI_StereoCamera& stereoCam)
-    : IGenericListener<CameraData, CameraData>(),
+    MyListener(const cv::Size& imageSize, const int single, CSI_StereoCamera* stereoCam)
+    : IGenericListener<CameraData>(),
+      mSingle(single),
       mStereoCam(stereoCam), 
       mLeft(imageSize, CV_8UC1), 
       mRight(imageSize, CV_8UC1), 
@@ -211,22 +213,34 @@ public:
         pthread_mutex_destroy(&mLock);
     }
 
-    void update(const CameraData& left, const CameraData& right) override
+    void update(const CameraData& camData) override
     {
         int64 time2;
         int64 time1;
 
-        time1 = cv::getTickCount();
-        mStereoCam.computeDisp(useFiltered, left.mImage, right.mImage, mDisparity);
-        time2 = cv::getTickCount();
-        pthread_mutex_lock(&mLock);
-        mTimestamp = (left.mTimestamp + right.mTimestamp) * 0.5;
-        mLeft = left.mImage.createMatHeader();
-        mRight = right.mImage.createMatHeader();
-        pthread_mutex_unlock(&mLock);
-        printf("%f: Disparity calculated in %f \n", 
-                    static_cast<double>(time1) / cv::getTickFrequency(),
-                    static_cast<double>(time2 - time1) / cv::getTickFrequency());
+        if (camData.mID.size() > 1)
+        {
+            time1 = cv::getTickCount();
+            mStereoCam->computeDisp(useFiltered, camData.mImage[0], camData.mImage[1], mDisparity);
+            time2 = cv::getTickCount();
+            pthread_mutex_lock(&mLock);
+            mTimestamp = (camData.mTimestamp[0] + camData.mTimestamp[1]) * 0.5;
+            mLeft = camData.mImage[0].createMatHeader();
+            mRight = camData.mImage[1].createMatHeader();
+            pthread_mutex_unlock(&mLock);
+            printf("%f: Disparity calculated in %f \n", 
+                        static_cast<double>(time1) / cv::getTickFrequency(),
+                        static_cast<double>(time2 - time1) / cv::getTickFrequency());
+        }
+        else if (camData.mID[0] == static_cast<uchar>(mSingle))
+        {
+            mTimestamp = camData.mTimestamp[0];
+            mLeft = camData.mImage[0].createMatHeader();
+        }
+        else
+        {
+            printf("This should not be called! \n");
+        }
     }
 
     double getImages(cv::Mat& left, cv::Mat& right, cv::Mat& disparity) const
@@ -238,9 +252,18 @@ public:
         return mTimestamp;
     }
 
+    double getImage(cv::Mat& img) const
+    {
+        ScopedLock lock(mLock);
+        std::swap(mLeft, img);
+        return mTimestamp;
+    }
+
 private:
+    /** ID of a single camera if used, negative for stereo. */
+    int mSingle;
     /** Reference to the stereo camera class. */
-    CSI_StereoCamera& mStereoCam;
+    CSI_StereoCamera* mStereoCam;
     /** Images timestamp. */
     mutable double mTimestamp;
     /** The left camera image. */
@@ -259,7 +282,7 @@ private:
  *  @param framerate the framerate at which cameras should acquire images.
  *  @param mode the mode at which cameras should operate.
  */
-void run(const cv::Size& imageSize, const uint8_t framerate, const uint8_t mode)
+void runStereo(const cv::Size& imageSize, const uint8_t framerate, const uint8_t mode)
 {
     /* Flag to pause processing images. */
     bool pause = false;
@@ -274,7 +297,7 @@ void run(const cv::Size& imageSize, const uint8_t framerate, const uint8_t mode)
     /* Stereo disparity image. */
     cv::Mat disparity(imageSize, CV_8UC1);
     /* Custom listener for stereo camera. */
-    MyListener myListener(imageSize, stereo);
+    MyListener myListener(imageSize, -1, &stereo);
 
     int myID = stereo.registerListener(myListener);
 
@@ -321,6 +344,62 @@ void run(const cv::Size& imageSize, const uint8_t framerate, const uint8_t mode)
     }
 }
 
+/**
+ * Runs the application.
+ *  @param imageSize the size to which images should be resized.
+ *  @param framerate the framerate at which cameras should acquire images.
+ *  @param mode the mode at which cameras should operate.
+ *  @param single ID of a single camera to start, or negative for stereo camera.
+ */
+void runMono(const cv::Size& imageSize, const uint8_t framerate, const uint8_t mode, const int single)
+{
+    /* Flag to pause processing images. */
+    bool pause = false;
+    /* Current key pressed by the user. */
+    int key;
+    /* The mono camera class. */
+    CSI_Camera mono;
+    /* Image. */
+    cv::Mat img(imageSize, CV_8UC1);
+    /* Custom listener for camera. */
+    MyListener myListener(imageSize, single, nullptr);
+
+    int myID = mono.registerListener(myListener);
+
+    if (mono.startCamera(imageSize, framerate, mode, single, 2, true))
+    {
+		cv::namedWindow("CSI Camera", cv::WINDOW_AUTOSIZE);
+
+		puts("Hit ESC to exit");
+		while (key != 27)
+		{
+            myListener.getImage(img);
+			key = cv::waitKey(30) & 0xff;
+            cv::imshow("CSI Camera", img);
+			/* when space bar is pressed, pause processing images and save current rectified images with disparity map to files. */
+			if (key == 32)
+			{
+				pause = !pause;
+                if (pause)
+                {
+                    mono.unregisterListener(myID);
+                    cv::imwrite("img.png", img);
+                }
+                else
+                {
+                    myID = mono.registerListener(myListener);
+                }
+			}
+		}
+        mono.stopCamera();
+		cv::destroyAllWindows();
+    }
+    else
+    {
+    	puts("Failed to open camera.");
+    }
+}
+
 int main(int argc, char** argv)
 {
 	/** Image size for final images. */
@@ -329,12 +408,18 @@ int main(int argc, char** argv)
     uint8_t framerate = 20;
     /** The mode in which CSI cameras should operate. */
     uint8_t mode = 0;
+    /** Indicates if a single camera should be started instead of stereo. */
+    int single = -1;
 
     for (int i = 1; i < argc; ++i)
     {
         if ((0 == strcmp(argv[i], "--mode")) || (0 == strcmp(argv[i], "-m")))
         {
             mode = static_cast<uint8_t>(atoi(argv[i + 1]));
+        }
+        else if ((0 == strcmp(argv[i], "--single")) || (0 == strcmp(argv[i], "-s")))
+        {
+        	single = atoi(argv[i + 1]);
         }
         else if ((0 == strcmp(argv[i], "--framerate")) || (0 == strcmp(argv[i], "-f")))
         {
@@ -358,6 +443,13 @@ int main(int argc, char** argv)
 			/* nothing to do in here */
 		}
     }
-    run(imageSize, framerate, mode);
+    if (single < 0)
+    {
+        runStereo(imageSize, framerate, mode);
+    }
+    else
+    {
+        runMono(imageSize, framerate, mode, single);
+    }
     return 0;
 }
