@@ -302,7 +302,7 @@ void runStereo(const cv::Size& imageSize, const uint8_t framerate, const uint8_t
     int myID = stereo.registerListener(myListener);
 
     stereo.loadCalibration("./config");
-    if (stereo.startCamera(framerate, mode, 0, 1, 2, false, true))
+    if (stereo.startCamera(imageSize, framerate, mode, {0, 1}, 2, false, true))
     {
 		cv::namedWindow("Left CSI Camera", cv::WINDOW_AUTOSIZE);
 		cv::namedWindow("Right CSI Camera", cv::WINDOW_AUTOSIZE);
@@ -366,7 +366,7 @@ void runMono(const cv::Size& imageSize, const uint8_t framerate, const uint8_t m
 
     int myID = mono.registerListener(myListener);
 
-    if (mono.startCamera(imageSize, framerate, mode, single, 2, true))
+    if (mono.startCamera(imageSize, framerate, mode, {static_cast<uint8_t>(single)}, 2, true, false))
     {
 		cv::namedWindow("CSI Camera", cv::WINDOW_AUTOSIZE);
 

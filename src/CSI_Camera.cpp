@@ -50,7 +50,7 @@ std::string gstreamerPipeline(const uint8_t id, const uint8_t mode, const cv::Si
 } /* end of the anonymous namespace */
 
 CSI_Camera::CSI_Camera()
-: GenericTalker<CameraData>(), 
+: ICameraTalker(), 
   mID(0), 
   mImgSize(), 
   mColour(true), 
@@ -66,7 +66,8 @@ CSI_Camera::~CSI_Camera()
 }
 
 bool CSI_Camera::startCamera(const cv::Size& imageSize, const uint8_t framerate, const uint8_t mode, 
-                             const uint8_t id, const uint8_t flip, const bool colour)
+                             const std::vector<uint8_t>& ids, const uint8_t flip, const bool colour,
+                             const bool)
 {
     if (isInitialised())
     {
@@ -74,7 +75,7 @@ bool CSI_Camera::startCamera(const cv::Size& imageSize, const uint8_t framerate,
     }
     mImgSize = imageSize;
     mColour = colour;
-	mID = id;
+	mID = ids[0];
 	mThreadRun = true;
 	mCapture.open(gstreamerPipeline(mID, mode, imageSize, framerate, flip, colour ? "BGR" : "GRAY8"), cv::CAP_GSTREAMER);
     return (isInitialised() && (0 == pthread_create(&mThread, nullptr, CSI_Camera::startGrabThread, this)));
@@ -92,6 +93,11 @@ void CSI_Camera::stopCamera()
     {
     	mCapture.release();
     }
+}
+
+bool CSI_Camera::isInitialised() const
+{
+    return mCapture.isOpened();
 }
 
 uint8_t CSI_Camera::getSizeForMode(const uint8_t mode, cv::Size& size)

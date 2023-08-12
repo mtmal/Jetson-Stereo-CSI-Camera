@@ -25,8 +25,7 @@
 #include <atomic>
 #include <pthread.h>
 #include <opencv2/videoio.hpp>
-#include <GenericTalker.h>
-#include "CameraData.h"
+#include "ICameraTalker.h"
 
 
 /**
@@ -37,7 +36,7 @@
  *
  * @note this class was tested with IMX219-83 camera.
  */
-class CSI_Camera : public GenericTalker<CameraData>
+class CSI_Camera : public ICameraTalker
 {
 public:
     /** Camera's focal length in metres. */
@@ -62,27 +61,29 @@ public:
      *  @param imageSize the size to which all images will be resized.
      *  @param framerate the camera's framerate in Hz.
      *  @param mode the mode of the camera - each camera may have different mode specification.
-     *  @param id the id of the camera in case there are multiple cameras connected.
+     *  @param ids the id of the camera as the first element in the list.
      *  @param flip the flip parameter. Usually 0 (no rotation) or 2 (180 deg).
      *  @param colour true to get BGR images, false for greyscale.
+     *  @param rectify true if images should be rectified. TODO: not implemented.
      *  @return true if the both the camera and insternal thread were started correctly.
      */
     bool startCamera(const cv::Size& imageSize, const uint8_t framerate, const uint8_t mode, 
-                     const uint8_t id, const uint8_t flip, const bool colour);
+                     const std::vector<uint8_t>& ids, const uint8_t flip, const bool colour,
+                     const bool rectify) override;
 
     /**
      * Stops the camera by stopping the internal thread and releasing the camera itself.
      */
-    void stopCamera();
+    void stopCamera() override;
 
     /**
      *  @return true if the camera has been initialised.
      */
-    inline bool isInitialised() const
-    {
-        return mCapture.isOpened();
-    }
+    bool isInitialised() const override;
 
+    /**
+     *  @return the size of images.
+     */
     inline constexpr const cv::Size& getSize() const
     {
         return mImgSize;

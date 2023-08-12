@@ -61,7 +61,7 @@ void scaleCameraMatrix(const cv::Size& imgSize, const cv::Size& maxSize, cv::Mat
 
 CSI_StereoCamera::CSI_StereoCamera(const cv::Size& imageSize)
 : IGenericListener<CameraData>(), 
-  GenericTalker<CameraData>(),
+  ICameraTalker(),
   mImageSize(imageSize), 
   mRunThread(false), 
   mThread(0), 
@@ -94,39 +94,42 @@ CSI_StereoCamera::~CSI_StereoCamera()
     pthread_mutex_destroy(&mMutex);
 }
 
-bool CSI_StereoCamera::startCamera(const uint8_t framerate, const uint8_t mode, const uint8_t lCamID,
-		const uint8_t rCamID, const uint8_t flip, const bool colour, const bool rectified)
+bool CSI_StereoCamera::startCamera(const cv::Size& imageSize, const uint8_t framerate, const uint8_t mode, 
+                                   const std::vector<uint8_t>& ids, const uint8_t flip, 
+                                   const bool colour, const bool rectified)
 {
-    bool retVal;
-
-    if (isRun())
-    {
-        stopCamera();
-    }
-
-    retVal = mLCam.startCamera(mImageSize, framerate, mode, lCamID, flip, colour)
-           & mRCam.startCamera(mImageSize, framerate, mode, rCamID, flip, colour);
-
+    bool retVal = (ids.size() >= 2 && imageSize == mImageSize);
     if (retVal)
     {
-        mRequestedRect = rectified;
-        mRunThread = true;
-        retVal = (0 == pthread_create(&mThread, nullptr, CSI_StereoCamera::startProcessThread, this));
-
-        if (!retVal)
+        if (isRun())
         {
-            /* one of the cameras have failed to start, so we stop all */
             stopCamera();
         }
-        else
-        {
-            mCamDatas.mID = {lCamID, rCamID};
-            mCamDatas.mTimestamp = {0.0, 0.0};
-            mCamDatas.mImage = {cv::cuda::HostMem(mImageSize, colour ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED),
-                                cv::cuda::HostMem(mImageSize, colour ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED)};
 
-            mLListID = mLCam.registerListener(*this);
-            mRListID = mRCam.registerListener(*this);
+        retVal = mLCam.startCamera(mImageSize, framerate, mode, {ids[0]}, flip, colour, rectified)
+               & mRCam.startCamera(mImageSize, framerate, mode, {ids[1]}, flip, colour, rectified);
+
+        if (retVal)
+        {
+            mRequestedRect = rectified;
+            mRunThread = true;
+            retVal = (0 == pthread_create(&mThread, nullptr, CSI_StereoCamera::startProcessThread, this));
+
+            if (!retVal)
+            {
+                /* one of the cameras have failed to start, so we stop all */
+                stopCamera();
+            }
+            else
+            {
+                mCamDatas.mID = ids;
+                mCamDatas.mTimestamp = {0.0, 0.0};
+                mCamDatas.mImage = {cv::cuda::HostMem(mImageSize, colour ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED),
+                                    cv::cuda::HostMem(mImageSize, colour ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED)};
+
+                mLListID = mLCam.registerListener(*this);
+                mRListID = mRCam.registerListener(*this);
+            }
         }
     }
 	return retVal;
@@ -144,6 +147,11 @@ void CSI_StereoCamera::stopCamera()
     mRCam.stopCamera();
     mLCam.unregisterListener(mLListID);
     mRCam.unregisterListener(mRListID);
+}
+
+bool CSI_StereoCamera::isInitialised() const
+{
+    return mLCam.isInitialised() && mRCam.isInitialised();
 }
 
 void CSI_StereoCamera::restartDispFilter(const double lambda, const double sigmaColour)
