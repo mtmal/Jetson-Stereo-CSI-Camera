@@ -20,8 +20,7 @@
 // SOFTWARE.
 ////////////////////////////////////////////////////////////////////////////////
 
-#ifndef __CAMERACONSTANTS_H__
-#define __CAMERACONSTANTS_H__
+#pragma once
 
 #include <string>
 
@@ -51,5 +50,3 @@ static const std::string NEW_CAM_MATRIX_LEFT = "P1";
 static const std::string NEW_CAM_MATRIX_RIGHT = "P2";
 /** The name of the node in XML file with disparity to depth parameters. */
 static const std::string DISPARITY_TO_DEPTH = "Q";
-
-#endif // __CAMERACONSTANTS_H__

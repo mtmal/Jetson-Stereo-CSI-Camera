@@ -22,11 +22,9 @@
 
 #pragma once
 
-#include <atomic>
-#include <pthread.h>
 #include <opencv2/videoio.hpp>
+#include <GenericListener.h>
 #include "ICameraTalker.h"
-
 
 /**
  * This class provides communication with CSI camera via OpenCV.

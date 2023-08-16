@@ -20,11 +20,12 @@
 // SOFTWARE.
 ////////////////////////////////////////////////////////////////////////////////
 
-#ifndef __CSI_STEREOCAMERA_H__
-#define __CSI_STEREOCAMERA_H__
+#pragma once
 
 #include <semaphore.h>
 #include <opencv2/cudawarping.hpp>
+#include <GenericListener.h>
+#include "CameraData.h"
 #include "CSI_Camera.h"
 
 
@@ -64,7 +65,7 @@ namespace cv
  * TODO: implement disparity filter using CUDA.
  * TODO: add functionality to reproject disparity to point cloud.
  */
-class CSI_StereoCamera : public IGenericListener<CameraData>,
+class CSI_StereoCamera : public GenericListener<CameraData>,
                          public ICameraTalker
 {
 public:
@@ -185,12 +186,8 @@ private:
     bool mRequestedRect;
     /** The wrapper for left CSI camera. */
     CSI_Camera mLCam;
-    /** Listener ID for left camera. */
-    int mLListID;
     /** The wrapper for right CSI camera. */
     CSI_Camera mRCam;
-    /** Listener ID for right camera. */
-    int mRListID;
     /** Shared buffer for initial disparity map. */
     cv::cuda::HostMem mDisparity;
     /** Shared buffer for the result of median filtering on left image. */
@@ -218,5 +215,3 @@ private:
     /** The lock */
     pthread_mutex_t mMutex;
 };
-
-#endif // __CSI_STEREOCAMERA_H__

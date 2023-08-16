@@ -20,8 +20,7 @@
 // SOFTWARE.
 ////////////////////////////////////////////////////////////////////////////////
 
-#ifndef FRAMETIMECHECKER_H_
-#define FRAMETIMECHECKER_H_
+#pragma once
 
 /**
  * This class encapsulates variables and methods for the comparison
@@ -69,5 +68,3 @@ private:
     /** The threshold below which all frames are assumed OK. */
     unsigned long long mCountThres;
 };
-
-#endif /* FRAMETIMECHECKER_H_ */

@@ -50,7 +50,7 @@ std::string gstreamerPipeline(const uint8_t id, const uint8_t mode, const cv::Si
 } /* end of the anonymous namespace */
 
 CSI_Camera::CSI_Camera()
-: ICameraTalker(), 
+: ICameraTalker(),
   mID(0), 
   mImgSize(), 
   mColour(true), 
@@ -149,7 +149,7 @@ void CSI_Camera::grabThreadBody()
         if (mCapture.read(camData.mImage[0]))
         {
             camData.mTimestamp[0] = mCapture.get(cv::CAP_PROP_POS_MSEC);
-            this->notifyListeners(camData);
+            notifyListeners(camData);
         }
     }
 }

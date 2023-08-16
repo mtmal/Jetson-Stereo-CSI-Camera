@@ -25,7 +25,7 @@
 #include <GenericTalker.h>
 #include "CameraData.h"
 
-class ICameraTalker : public GenericTalker<CameraData> 
+class ICameraTalker : public GenericTalker<CameraData>
 {
 public:
     /**

@@ -60,16 +60,14 @@ void scaleCameraMatrix(const cv::Size& imgSize, const cv::Size& maxSize, cv::Mat
 } /* end of the anonymous namespace */
 
 CSI_StereoCamera::CSI_StereoCamera(const cv::Size& imageSize)
-: IGenericListener<CameraData>(), 
+: GenericListener<CameraData>(), 
   ICameraTalker(),
   mImageSize(imageSize), 
   mRunThread(false), 
   mThread(0), 
   mRequestedRect(false), 
   mLCam(), 
-  mLListID(0), 
   mRCam(), 
-  mRListID(0), 
   mDisparity(imageSize, CV_8UC1, cv::cuda::HostMem::AllocType::SHARED), 
   mLeftGPU(imageSize, CV_8UC1, cv::cuda::HostMem::AllocType::SHARED), 
   mRightGPU(imageSize, CV_8UC1),
@@ -127,8 +125,8 @@ bool CSI_StereoCamera::startCamera(const cv::Size& imageSize, const uint8_t fram
                 mCamDatas.mImage = {cv::cuda::HostMem(mImageSize, colour ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED),
                                     cv::cuda::HostMem(mImageSize, colour ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED)};
 
-                mLListID = mLCam.registerListener(*this);
-                mRListID = mRCam.registerListener(*this);
+                mLCam.registerTo(static_cast<GenericListener<CameraData>*>(this));
+                mRCam.registerTo(static_cast<GenericListener<CameraData>*>(this));
             }
         }
     }
@@ -145,8 +143,8 @@ void CSI_StereoCamera::stopCamera()
     }
     mLCam.stopCamera();
     mRCam.stopCamera();
-    mLCam.unregisterListener(mLListID);
-    mRCam.unregisterListener(mRListID);
+    mLCam.unregisterFrom(static_cast<GenericListener<CameraData>*>(this));
+    mRCam.unregisterFrom(static_cast<GenericListener<CameraData>*>(this));
 }
 
 bool CSI_StereoCamera::isInitialised() const

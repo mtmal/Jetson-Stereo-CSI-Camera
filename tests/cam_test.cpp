@@ -194,11 +194,11 @@ void createSlides(CSI_StereoCamera& stereoCam)
     cv::createTrackbar("Filter Sigma Colour", "Disparity", &sigma, 3000, onTrackbar, &stereoCam);
 }
 
-class MyListener : public IGenericListener<CameraData>
+class MyListener : public GenericListener<CameraData>
 {
 public:
     MyListener(const cv::Size& imageSize, const int single, CSI_StereoCamera* stereoCam)
-    : IGenericListener<CameraData>(),
+    : GenericListener<CameraData>(),
       mSingle(single),
       mStereoCam(stereoCam), 
       mLeft(imageSize, CV_8UC1), 
@@ -299,7 +299,7 @@ void runStereo(const cv::Size& imageSize, const uint8_t framerate, const uint8_t
     /* Custom listener for stereo camera. */
     MyListener myListener(imageSize, -1, &stereo);
 
-    int myID = stereo.registerListener(myListener);
+    static_cast<GenericTalker<CameraData>&>(stereo).registerTo(&myListener);
 
     stereo.loadCalibration("./config");
     if (stereo.startCamera(imageSize, framerate, mode, {0, 1}, 2, false, true))
@@ -324,14 +324,14 @@ void runStereo(const cv::Size& imageSize, const uint8_t framerate, const uint8_t
 				pause = !pause;
                 if (pause)
                 {
-                    stereo.unregisterListener(myID);
+                    static_cast<GenericTalker<CameraData>&>(stereo).unregisterFrom(&myListener);
                     cv::imwrite("left.png", left);
                     cv::imwrite("right.png", right);
                     cv::imwrite("disparity.png", disparity);
                 }
                 else
                 {
-                    myID = stereo.registerListener(myListener);
+                    static_cast<GenericTalker<CameraData>&>(stereo).registerTo(&myListener);
                 }
 			}
 		}
@@ -364,7 +364,7 @@ void runMono(const cv::Size& imageSize, const uint8_t framerate, const uint8_t m
     /* Custom listener for camera. */
     MyListener myListener(imageSize, single, nullptr);
 
-    int myID = mono.registerListener(myListener);
+    mono.registerTo(&myListener);
 
     if (mono.startCamera(imageSize, framerate, mode, {static_cast<uint8_t>(single)}, 2, true, false))
     {
@@ -382,12 +382,12 @@ void runMono(const cv::Size& imageSize, const uint8_t framerate, const uint8_t m
 				pause = !pause;
                 if (pause)
                 {
-                    mono.unregisterListener(myID);
+                    mono.unregisterFrom(&myListener);
                     cv::imwrite("img.png", img);
                 }
                 else
                 {
-                    myID = mono.registerListener(myListener);
+                    mono.registerTo(&myListener);
                 }
 			}
 		}
