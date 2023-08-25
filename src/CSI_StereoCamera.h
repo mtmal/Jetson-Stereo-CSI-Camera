@@ -153,20 +153,16 @@ public:
 
     // override
     void update(const CameraData& camData) override;
+    inline bool isRunning() const override
+    {
+        return mRunThread.load(std::memory_order_relaxed);
+    }
 
 protected:
     /**
      * The main body of the thread that constantly retrieves the latest image from CSI cameras.
      */
     void processThreadBody();
-
-    /**
-     *  @return true if the main thread should be running.
-     */
-    inline bool isRun() const
-    {
-        return mRunThread.load(std::memory_order_relaxed);
-    }
 
 private:
     /**

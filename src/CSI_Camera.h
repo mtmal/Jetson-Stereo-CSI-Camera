@@ -111,15 +111,15 @@ public:
         return mColour;
     }
 
-protected:
     /**
      *  @return true if the main thread should be running.
      */
-    inline bool isRun() const
+    inline bool isRunning() const override
     {
         return mThreadRun.load(std::memory_order_relaxed);
     }
 
+protected:
     /**
      * The main body of the thread that constantly retrieves the latest image from CSI camera.
      */

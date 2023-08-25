@@ -144,7 +144,7 @@ void CSI_Camera::grabThreadBody()
     camData.mTimestamp.push_back(0.0);
     camData.mImage.push_back(cv::cuda::HostMem(getSize(), getColour() ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED));
     
-    while (isRun())
+    while (isRunning())
     {
         if (mCapture.read(camData.mImage[0]))
         {

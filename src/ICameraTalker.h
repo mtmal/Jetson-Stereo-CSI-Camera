@@ -52,4 +52,9 @@ public:
      *  @return true if the camera has been initialised.
      */
     virtual bool isInitialised() const = 0;
+
+    /**
+     *  @return true if the camera was started and is working. 
+     */
+    virtual bool isRunning() const = 0;
 };

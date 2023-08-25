@@ -99,7 +99,7 @@ bool CSI_StereoCamera::startCamera(const cv::Size& imageSize, const uint8_t fram
     bool retVal = (ids.size() >= 2 && imageSize == mImageSize);
     if (retVal)
     {
-        if (isRun())
+        if (isRunning())
         {
             stopCamera();
         }
@@ -308,7 +308,7 @@ void CSI_StereoCamera::processThreadBody()
     camData.mImage = {cv::cuda::HostMem(mImageSize, mLCam.getColour() ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED),
                       cv::cuda::HostMem(mImageSize, mRCam.getColour() ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED)};
 
-    while (isRun())
+    while (isRunning())
     {
         if (0 == sem_wait(&mSem))
         {
