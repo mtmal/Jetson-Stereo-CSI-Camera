@@ -22,9 +22,9 @@
 
 #pragma once
 
-#include <semaphore.h>
 #include <opencv2/cudawarping.hpp>
 #include <GenericListener.h>
+#include <GenericThread.h>
 #include "CameraData.h"
 #include "CSI_Camera.h"
 
@@ -66,8 +66,13 @@ namespace cv
  * TODO: add functionality to reproject disparity to point cloud.
  */
 class CSI_StereoCamera : public GenericListener<CameraData>,
-                         public ICameraTalker
+                         public ICameraTalker,
+                         protected GenericThread<CSI_StereoCamera>
 {
+    /* Relax the access control to baseclass which is inherited as protected. GenericThread is inherited as protected, because
+     * ICameraTalker controls the camera and starting/stopping threads. */
+    friend class GenericThread<CSI_StereoCamera>;
+
 public:
 	/**
 	 * Basic constructor which initialises all variables.
@@ -155,29 +160,18 @@ public:
     void update(const CameraData& camData) override;
     inline bool isRunning() const override
     {
-        return mRunThread.load(std::memory_order_relaxed);
+        return GenericThread<CSI_StereoCamera>::isRunning();
     }
 
-protected:
     /**
      * The main body of the thread that constantly retrieves the latest image from CSI cameras.
+     *  @return nullptr
      */
-    void processThreadBody();
+    void* theadBody();
 
 private:
-    /**
-     * Starts the new thread for pulling images from CSI cameras.
-     *  @param thread pointer to this class.
-     *  @return nullptr.
-     */
-    static void* startProcessThread(void* thread);
-
     /** The size of images. */
     cv::Size mImageSize;
-    /** Flag indicating if the main thread should run. */
-    std::atomic<bool> mRunThread;
-    /** The main thread. */
-    pthread_t mThread;
     /** Flag to indicate if rectified images should be requested. */
     bool mRequestedRect;
     /** The wrapper for left CSI camera. */
@@ -204,10 +198,6 @@ private:
     cv::Ptr<cv::ximgproc::DisparityWLSFilter> mDispWLSFilter;
     /** Shared buffers for rectification maps. */
     cv::cuda::HostMem mRectMaps[2][2];
-    /** Semaphore for threads synchronisation. */
-    sem_t mSem;
     /** Shared buffers for left and right camera data. */
     CameraData mCamDatas;
-    /** The lock */
-    pthread_mutex_t mMutex;
 };

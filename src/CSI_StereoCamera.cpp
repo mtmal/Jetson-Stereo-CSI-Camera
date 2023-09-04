@@ -62,9 +62,8 @@ void scaleCameraMatrix(const cv::Size& imgSize, const cv::Size& maxSize, cv::Mat
 CSI_StereoCamera::CSI_StereoCamera(const cv::Size& imageSize)
 : GenericListener<CameraData>(), 
   ICameraTalker(),
-  mImageSize(imageSize), 
-  mRunThread(false), 
-  mThread(0), 
+  GenericThread<CSI_StereoCamera>(),
+  mImageSize(imageSize),
   mRequestedRect(false), 
   mLCam(), 
   mRCam(), 
@@ -78,8 +77,6 @@ CSI_StereoCamera::CSI_StereoCamera(const cv::Size& imageSize)
 {
 	mStereoBM->setPreFilterType(1);
 	restartDispFilter(8000.0, 2.0);
-    sem_init(&mSem, 0, 0);
-    pthread_mutex_init(&mMutex, nullptr);
     mRectMaps[0][0] = cv::cuda::HostMem(mImageSize, CV_32FC1, cv::cuda::HostMem::AllocType::SHARED);
     mRectMaps[0][1] = cv::cuda::HostMem(mImageSize, CV_32FC1, cv::cuda::HostMem::AllocType::SHARED);
     mRectMaps[1][0] = cv::cuda::HostMem(mImageSize, CV_32FC1, cv::cuda::HostMem::AllocType::SHARED);
@@ -88,8 +85,7 @@ CSI_StereoCamera::CSI_StereoCamera(const cv::Size& imageSize)
 
 CSI_StereoCamera::~CSI_StereoCamera()
 {
-    sem_destroy(&mSem);
-    pthread_mutex_destroy(&mMutex);
+    stopCamera();
 }
 
 bool CSI_StereoCamera::startCamera(const cv::Size& imageSize, const uint8_t framerate, const uint8_t mode, 
@@ -110,8 +106,7 @@ bool CSI_StereoCamera::startCamera(const cv::Size& imageSize, const uint8_t fram
         if (retVal)
         {
             mRequestedRect = rectified;
-            mRunThread = true;
-            retVal = (0 == pthread_create(&mThread, nullptr, CSI_StereoCamera::startProcessThread, this));
+            retVal = startThread();
 
             if (!retVal)
             {
@@ -135,12 +130,7 @@ bool CSI_StereoCamera::startCamera(const cv::Size& imageSize, const uint8_t fram
 
 void CSI_StereoCamera::stopCamera()
 {
-    mRunThread = false;
-    if (mThread > 0)
-    {
-        pthread_join(mThread, nullptr);
-        mThread = 0;
-    }
+    stopThread();
     mLCam.stopCamera();
     mRCam.stopCamera();
     mLCam.unregisterFrom(static_cast<GenericListener<CameraData>*>(this));
@@ -293,11 +283,11 @@ void CSI_StereoCamera::update(const CameraData& camData)
     mCamDatas.mImage[camData.mID[0]] = camData.mImage[0];
     if (++counter % 2 == 0)
     {
-        sem_post(&mSem);
+        sem_post(&mSemaphore);
     }
 }
 
-void CSI_StereoCamera::processThreadBody()
+void* CSI_StereoCamera::theadBody()
 {
     /** Utility class used for comparing stereo pair frame times to access if they are synchronised or not. */
     FrameTimeChecker ftc;
@@ -310,7 +300,7 @@ void CSI_StereoCamera::processThreadBody()
 
     while (isRunning())
     {
-        if (0 == sem_wait(&mSem))
+        if (0 == sem_wait(&mSemaphore))
         {
             pthread_mutex_lock(&mMutex);
             if (mCamDatas.mTimestamp[0] > 0 && 
@@ -337,11 +327,5 @@ void CSI_StereoCamera::processThreadBody()
             }
         }
     }
-}
-
-void* CSI_StereoCamera::startProcessThread(void* thread)
-{
-    CSI_StereoCamera* camera = static_cast<CSI_StereoCamera*>(thread);
-    camera->processThreadBody();
     return nullptr;
 }

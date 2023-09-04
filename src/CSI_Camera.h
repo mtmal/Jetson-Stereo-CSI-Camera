@@ -24,6 +24,7 @@
 
 #include <opencv2/videoio.hpp>
 #include <GenericListener.h>
+#include <GenericThread.h>
 #include "ICameraTalker.h"
 
 /**
@@ -34,8 +35,13 @@
  *
  * @note this class was tested with IMX219-83 camera.
  */
-class CSI_Camera : public ICameraTalker
+class CSI_Camera : public ICameraTalker,
+                   protected GenericThread<CSI_Camera>
 {
+    /* Relax the access control to baseclass which is inherited as protected. GenericThread is inherited as protected, because
+     * ICameraTalker controls the camera and starting/stopping threads. */
+    friend class GenericThread<CSI_Camera>;
+
 public:
     /** Camera's focal length in metres. */
     static constexpr double FOCAL_LENGTH_M  = 0.0026;
@@ -80,6 +86,14 @@ public:
     bool isInitialised() const override;
 
     /**
+     *  @return true if the camera was started and is working. 
+     */
+    inline bool isRunning() const override
+    {
+        return GenericThread<CSI_Camera>::isRunning();
+    }
+
+    /**
      *  @return the size of images.
      */
     inline constexpr const cv::Size& getSize() const
@@ -112,37 +126,18 @@ public:
     }
 
     /**
-     *  @return true if the main thread should be running.
-     */
-    inline bool isRunning() const override
-    {
-        return mThreadRun.load(std::memory_order_relaxed);
-    }
-
-protected:
-    /**
      * The main body of the thread that constantly retrieves the latest image from CSI camera.
+     *  @return nullptr
      */
-    void grabThreadBody();
+    void* theadBody();
 
 private:
-    /**
-     * Starts the new thread for pulling images from CSI camera.
-     *  @param thread pointer to this class.
-     *  @return nullptr.
-     */
-    static void* startGrabThread(void* thread);
-
     /** ID of this camera. */
     uint8_t mID;
     /** The size of requested images. */
     cv::Size mImgSize;
     /** The flag to indicate if requested image are to be BGR or greyscale. */
     bool mColour;
-    /** Flag that indicates if the thread should be running or not. */
-    std::atomic<bool> mThreadRun;
-    /** Thread which pulls images from CSI camera. */
-    pthread_t mThread;
     /** OpenCV wrapper which allows communication with CSI camera. */
     cv::VideoCapture mCapture;
 };
