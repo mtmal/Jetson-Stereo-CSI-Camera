@@ -129,7 +129,7 @@ public:
      * The main body of the thread that constantly retrieves the latest image from CSI camera.
      *  @return nullptr
      */
-    void* theadBody();
+    void* threadBody();
 
 private:
     /** ID of this camera. */

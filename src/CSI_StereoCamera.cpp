@@ -287,7 +287,7 @@ void CSI_StereoCamera::update(const CameraData& camData)
     }
 }
 
-void* CSI_StereoCamera::theadBody()
+void* CSI_StereoCamera::threadBody()
 {
     /** Utility class used for comparing stereo pair frame times to access if they are synchronised or not. */
     FrameTimeChecker ftc;

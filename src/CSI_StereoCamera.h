@@ -167,7 +167,7 @@ public:
      * The main body of the thread that constantly retrieves the latest image from CSI cameras.
      *  @return nullptr
      */
-    void* theadBody();
+    void* threadBody();
 
 private:
     /** The size of images. */

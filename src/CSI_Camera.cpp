@@ -130,7 +130,7 @@ uint8_t CSI_Camera::getSizeForMode(const uint8_t mode, cv::Size& size)
     return framerate;
 }
 
-void* CSI_Camera::theadBody()
+void* CSI_Camera::threadBody()
 {
     CameraData camData;
     camData.mID.push_back(getId());
