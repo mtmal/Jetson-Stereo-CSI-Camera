@@ -35,8 +35,8 @@
  *
  * @note this class was tested with IMX219-83 camera.
  */
-class CSI_Camera : public ICameraTalker,
-                   protected GenericThread<CSI_Camera>
+class CSI_Camera final : public ICameraTalker,
+                         protected GenericThread<CSI_Camera>
 {
     /* Relax the access control to baseclass which is inherited as protected. GenericThread is inherited as protected, because
      * ICameraTalker controls the camera and starting/stopping threads. */

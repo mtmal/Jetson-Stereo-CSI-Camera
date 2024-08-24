@@ -30,6 +30,11 @@ class ICameraTalker : public GenericTalker<CameraData>
 {
 public:
     /**
+     * Virtual destructor for polymorphic behaviour.
+     */
+    virtual ~ICameraTalker() = default;
+
+    /**
      * Starts the camera. A vector of camera ids is required for a multi-camera systems.
      *  @param camConfig the configuration parameters for the camera.
      *  @param ids the list of camera ids.

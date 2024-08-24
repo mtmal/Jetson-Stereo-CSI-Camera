@@ -65,9 +65,9 @@ namespace cv
  * TODO: implement disparity filter using CUDA.
  * TODO: add functionality to reproject disparity to point cloud.
  */
-class CSI_StereoCamera : public GenericListener<CameraData>,
-                         public ICameraTalker,
-                         protected GenericThread<CSI_StereoCamera>
+class CSI_StereoCamera final: public GenericListener<CameraData>,
+                              public ICameraTalker,
+                              protected GenericThread<CSI_StereoCamera>
 {
     /* Relax the access control to baseclass which is inherited as protected. GenericThread is inherited as protected, because
      * ICameraTalker controls the camera and starting/stopping threads. */
