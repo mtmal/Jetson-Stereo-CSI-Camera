@@ -200,7 +200,8 @@ public:
     MyListener(const cv::Size& imageSize, const int single, CSI_StereoCamera* stereoCam)
     : GenericListener<CameraData>(),
       mSingle(single),
-      mStereoCam(stereoCam), 
+      mStereoCam(stereoCam),
+      mTimestamp(0.0),
       mLeft(imageSize, CV_8UC1), 
       mRight(imageSize, CV_8UC1), 
       mDisparity(imageSize, CV_8UC1)
@@ -278,31 +279,30 @@ private:
 
 /**
  * Runs the application.
- *  @param imageSize the size to which images should be resized.
- *  @param framerate the framerate at which cameras should acquire images.
- *  @param mode the mode at which cameras should operate.
+ *  @param[in,out] camConfig the configuration parameters for the camera.
  */
-void runStereo(const cv::Size& imageSize, const uint8_t framerate, const uint8_t mode)
+void runStereo(CameraConfig& camConfig)
 {
     /* Flag to pause processing images. */
     bool pause = false;
     /* Current key pressed by the user. */
-    int key;
+    int key = 0;
     /* The stereo camera class. */
-    CSI_StereoCamera stereo(imageSize);
+    CSI_StereoCamera stereo(camConfig.mImageSize);
     /* Left image. */
-    cv::Mat left(imageSize, CV_8UC1);
+    cv::Mat left(camConfig.mImageSize, CV_8UC1);
     /* Right image. */
-    cv::Mat right(imageSize, CV_8UC1);
+    cv::Mat right(camConfig.mImageSize, CV_8UC1);
     /* Stereo disparity image. */
-    cv::Mat disparity(imageSize, CV_8UC1);
+    cv::Mat disparity(camConfig.mImageSize, CV_8UC1);
     /* Custom listener for stereo camera. */
-    MyListener myListener(imageSize, -1, &stereo);
+    MyListener myListener(camConfig.mImageSize, -1, &stereo);
 
+    camConfig.mRectify = true;
     static_cast<GenericTalker<CameraData>&>(stereo).registerTo(&myListener);
 
     stereo.loadCalibration("./config");
-    if (stereo.startCamera(imageSize, framerate, mode, {0, 1}, 2, false, true))
+    if (stereo.startCamera(camConfig, {0, 1}))
     {
 		cv::namedWindow("Left CSI Camera", cv::WINDOW_AUTOSIZE);
 		cv::namedWindow("Right CSI Camera", cv::WINDOW_AUTOSIZE);
@@ -346,27 +346,26 @@ void runStereo(const cv::Size& imageSize, const uint8_t framerate, const uint8_t
 
 /**
  * Runs the application.
- *  @param imageSize the size to which images should be resized.
- *  @param framerate the framerate at which cameras should acquire images.
- *  @param mode the mode at which cameras should operate.
  *  @param single ID of a single camera to start, or negative for stereo camera.
+ *  @param[in,out] camConfig the configuration parameters for the camera.
  */
-void runMono(const cv::Size& imageSize, const uint8_t framerate, const uint8_t mode, const int single)
+void runMono(const int single, CameraConfig& camConfig)
 {
     /* Flag to pause processing images. */
     bool pause = false;
     /* Current key pressed by the user. */
-    int key;
+    int key = 0;
     /* The mono camera class. */
     CSI_Camera mono;
     /* Image. */
-    cv::Mat img(imageSize, CV_8UC1);
+    cv::Mat img(camConfig.mImageSize, CV_8UC1);
     /* Custom listener for camera. */
-    MyListener myListener(imageSize, single, nullptr);
+    MyListener myListener(camConfig.mImageSize, single, nullptr);
 
+    camConfig.mColour = true;
     mono.registerTo(&myListener);
 
-    if (mono.startCamera(imageSize, framerate, mode, {static_cast<uint8_t>(single)}, 2, true, false))
+    if (mono.startCamera(camConfig, {static_cast<uint8_t>(single)}))
     {
 		cv::namedWindow("CSI Camera", cv::WINDOW_AUTOSIZE);
 
@@ -402,12 +401,8 @@ void runMono(const cv::Size& imageSize, const uint8_t framerate, const uint8_t m
 
 int main(int argc, char** argv)
 {
-	/** Image size for final images. */
-    cv::Size imageSize(640, 480);
-    /** Framerate at which CSI cameras should capture images. */
-    uint8_t framerate = 20;
-    /** The mode in which CSI cameras should operate. */
-    uint8_t mode = 0;
+    /** Camera configuration parameters */
+    CameraConfig camConfig = {cv::Size(640, 480), 20, 0, 2, false, false, ""};
     /** Indicates if a single camera should be started instead of stereo. */
     int single = -1;
 
@@ -415,7 +410,7 @@ int main(int argc, char** argv)
     {
         if ((0 == strcmp(argv[i], "--mode")) || (0 == strcmp(argv[i], "-m")))
         {
-            mode = static_cast<uint8_t>(atoi(argv[i + 1]));
+            camConfig.mMode = static_cast<uint8_t>(atoi(argv[i + 1]));
         }
         else if ((0 == strcmp(argv[i], "--single")) || (0 == strcmp(argv[i], "-s")))
         {
@@ -423,15 +418,15 @@ int main(int argc, char** argv)
         }
         else if ((0 == strcmp(argv[i], "--framerate")) || (0 == strcmp(argv[i], "-f")))
         {
-        	framerate = static_cast<uint8_t>(atoi(argv[i + 1]));
+        	camConfig.mFramerate = static_cast<uint8_t>(atoi(argv[i + 1]));
         }
         else if ((0 == strcmp(argv[i], "--cols")) || (0 == strcmp(argv[i], "-c")))
         {
-        	imageSize.width = atoi(argv[i + 1]);
+        	camConfig.mImageSize.width = atoi(argv[i + 1]);
         }
         else if ((0 == strcmp(argv[i], "--rows")) || (0 == strcmp(argv[i], "-r")))
         {
-        	imageSize.height = atoi(argv[i + 1]);
+        	camConfig.mImageSize.height = atoi(argv[i + 1]);
         }
         else if ((0 == strcmp(argv[i], "--help")) || (0 == strcmp(argv[i], "-h")))
         {
@@ -445,11 +440,11 @@ int main(int argc, char** argv)
     }
     if (single < 0)
     {
-        runStereo(imageSize, framerate, mode);
+        runStereo(camConfig);
     }
     else
     {
-        runMono(imageSize, framerate, mode, single);
+        runMono(single, camConfig);
     }
     return 0;
 }

@@ -1,5 +1,5 @@
 ////////////////////////////////////////////////////////////////////////////////
-// Copyright (C) 2023 Mateusz Malinowski
+// Copyright (C) 2024 Mateusz Malinowski
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -22,33 +22,26 @@
 
 #pragma once
 
-#include <GenericTalker.h>
-#include "CameraConfig.h"
-#include "CameraData.h"
+#include <string>
+#include <opencv2/core/types.hpp>
 
-class ICameraTalker : public GenericTalker<CameraData>
+/**
+ * A structure with camera configuration parameters
+ */
+struct CameraConfig
 {
-public:
-    /**
-     * Starts the camera. A vector of camera ids is required for a multi-camera systems.
-     *  @param camConfig the configuration parameters for the camera.
-     *  @param ids the list of camera ids.
-     *	@return true if both cameras have started correctly.
-     */
-    virtual bool startCamera(const CameraConfig& camConfig, const std::vector<uint8_t>& ids) = 0;
-
-    /**
-     * Stops the camera.
-     */
-    virtual void stopCamera() = 0;
-
-    /**
-     *  @return true if the camera has been initialised.
-     */
-    virtual bool isInitialised() const = 0;
-
-    /**
-     *  @return true if the camera was started and is working. 
-     */
-    virtual bool isRunning() const = 0;
+    /** The size to which all images should be resized. */
+    cv::Size mImageSize;
+    /** Desired framerate in Hz. */
+    uint8_t mFramerate;
+    /** The camera-specific mode - each camera may have different mode specification. */
+    uint8_t mMode;
+    /** The flip parameter. Usually 0 (no rotation) or 2 (180 deg). */
+    uint8_t mFlip;
+    /** True to get BGR images, false for greyscale. */
+    bool mColour;
+    /** True if images should be rectified. */
+    bool mRectify;
+    /** A path to images that should be loaded instead of starting the actual camera. */
+    std::string mOfflineImages;
 };

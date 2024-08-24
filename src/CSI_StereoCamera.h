@@ -87,18 +87,11 @@ public:
 
     /**
      * Starts both cameras. If at least one fails to start, it ensures both are stopped.
-     *  @param imageSize the size to which all images will be resized, if it does not match the size of specified @p mode.
-     *  @param framerate the camera's framerate in Hz.
-     *  @param mode the mode of the camera - each camera may have different mode specification.
+     *  @param camConfig the configuration parameters for the camera.
      *  @param ids the list of camera ids.
-     *  @param flip the flip parameter. Usually 0 (no rotation) or 2 (180 deg).
-     *  @param colour true to get BGR images, false for greyscale.
-     *  @param rectify whether to request rectified/undistorted images.
      *	@return true if both cameras have started correctly.
      */
-    bool startCamera(const cv::Size& imageSize, const uint8_t framerate, const uint8_t mode = 0, 
-                     const std::vector<uint8_t>& ids = {0, 1}, const uint8_t flip = 2, 
-                     const bool colour = false, const bool rectified = true) override;
+    bool startCamera(const CameraConfig& camConfig, const std::vector<uint8_t>& ids) override;
 
     /**
      * Stops both cameras.

@@ -27,21 +27,18 @@ namespace
 /**
  * Populates the string with nvarguscamerasrc command for GStreamer.
  *  @param id the id of the camera in case there are multiple cameras connected.
- *  @param mode the mode of the camera - each camera may have different mode specification.
- *  @param imageSize the size to which images should be resized.
- *  @param framerate the camera's framerate in Hz.
- *  @param flip the flip parameter. Usually 0 (no rotation) or 2 (180 deg).
- *  @param imageType the type of images to convert to. For example, BGR or GRAY8.
+ *  @param camConfig the configuration parameters for the camera.
  *	@return the string with the command for GStreamer.
  */
-std::string gstreamerPipeline(const uint8_t id, const uint8_t mode, const cv::Size& imageSize,
-                               const uint8_t framerate, const uint8_t flip, const std::string& imageType = "BGR")
+std::string gstreamerPipeline(const uint8_t id, const CameraConfig& camConfig)
 {
+    std::string imageType = camConfig.mColour ? "BGR" : "GRAY8";
     char text[512];
     memset(text, '\0', 512);
     sprintf(text, "nvarguscamerasrc sensor-id=%u sensor-mode=%u ! video/x-raw(memory:NVMM), format=(string)NV12, framerate=(fraction)%u/1 ! "
                   "nvvidconv flip-method=%d ! video/x-raw, width=%d, height=%d, format=(string)BGRx ! videoconvert ! video/x-raw, "
-                  "format=(string)%s ! appsink", id, mode, framerate, flip, imageSize.width, imageSize.height, imageType.c_str());
+                  "format=(string)%s ! appsink", id, camConfig.mMode, camConfig.mFramerate, camConfig.mFlip, camConfig.mImageSize.width, 
+                  camConfig.mImageSize.height, imageType.c_str());
 #ifdef LOG
     printf("%s\n", text);
 #endif /* LOG */
@@ -64,18 +61,23 @@ CSI_Camera::~CSI_Camera()
 	stopCamera();
 }
 
-bool CSI_Camera::startCamera(const cv::Size& imageSize, const uint8_t framerate, const uint8_t mode, 
-                             const std::vector<uint8_t>& ids, const uint8_t flip, const bool colour,
-                             const bool)
+bool CSI_Camera::startCamera(const CameraConfig& camConfig, const std::vector<uint8_t>& ids)
 {
     if (isInitialised())
     {
         stopCamera();
     }
-    mImgSize = imageSize;
-    mColour = colour;
+    mImgSize = camConfig.mImageSize;
+    mColour = camConfig.mColour;
 	mID = ids[0];
-	mCapture.open(gstreamerPipeline(mID, mode, imageSize, framerate, flip, colour ? "BGR" : "GRAY8"), cv::CAP_GSTREAMER);
+    if (camConfig.mOfflineImages.empty())
+    {
+	    mCapture.open(gstreamerPipeline(mID, camConfig), cv::CAP_GSTREAMER);
+    }
+    else
+    {
+        mCapture.open(camConfig.mOfflineImages, cv::CAP_IMAGES);
+    }
     return (isInitialised() && startThread());
 }
 
@@ -95,39 +97,30 @@ bool CSI_Camera::isInitialised() const
 
 uint8_t CSI_Camera::getSizeForMode(const uint8_t mode, cv::Size& size)
 {
-	uint8_t framerate;
     switch (mode)
     {
         case 0:
-            framerate = 21;
             size = cv::Size(3264, 2464);
-            break;
+            return 21;
         case 1:
-            framerate = 28;
             size = cv::Size(3264, 1848);
-            break;
+            return 28;
         case 2:
-            framerate = 30;
             size = cv::Size(1920, 1080);
-            break;
+            return 30;
         case 3:
-            framerate = 30;
             size = cv::Size(1640, 1232);
-            break;
+            return 30;
         case 4:
-            framerate = 60;
             size = cv::Size(1280,  720);
-            break;
+            return 60;
         case 5:
-            framerate = 120;
             size = cv::Size(1280,  720);
-            break;
+            return 120;
         default:
-        	framerate = 0;
             size = cv::Size(0, 0);
-            break;
+            return 0;
     }
-    return framerate;
 }
 
 void* CSI_Camera::threadBody()
