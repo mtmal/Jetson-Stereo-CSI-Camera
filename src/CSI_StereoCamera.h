@@ -66,7 +66,7 @@ namespace cv
  * TODO: add functionality to reproject disparity to point cloud.
  */
 class CSI_StereoCamera final: public GenericListener<CameraData>,
-                              public ICameraTalker,
+                              public ICameraTalker<CameraConfig, CameraConfig>,
                               protected GenericThread<CSI_StereoCamera>
 {
     /* Relax the access control to baseclass which is inherited as protected. GenericThread is inherited as protected, because
@@ -87,11 +87,11 @@ public:
 
     /**
      * Starts both cameras. If at least one fails to start, it ensures both are stopped.
-     *  @param camConfig the configuration parameters for the camera.
-     *  @param ids the list of camera ids.
+     *  @param lCamConfigs Configuration parameters for the left camera.
+     *  @param rCamConfigs Configuration parameters for the right camera.
      *	@return true if both cameras have started correctly.
      */
-    bool startCamera(const CameraConfig& camConfig, const std::vector<uint8_t>& ids) override;
+    bool startCamera(const CameraConfig& lCamConfigs, const CameraConfig& rCamConfigs) override;
 
     /**
      * Stops both cameras.

@@ -36,6 +36,8 @@ struct CameraConfig
     uint8_t mFramerate;
     /** The camera-specific mode - each camera may have different mode specification. */
     uint8_t mMode;
+    /** The ID of the camera. */
+    uint8_t mID;
     /** The flip parameter. Usually 0 (no rotation) or 2 (180 deg). */
     uint8_t mFlip;
     /** True to get BGR images, false for greyscale. */

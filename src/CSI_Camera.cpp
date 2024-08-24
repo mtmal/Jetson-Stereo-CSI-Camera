@@ -26,18 +26,17 @@ namespace
 {
 /**
  * Populates the string with nvarguscamerasrc command for GStreamer.
- *  @param id the id of the camera in case there are multiple cameras connected.
  *  @param camConfig the configuration parameters for the camera.
  *	@return the string with the command for GStreamer.
  */
-std::string gstreamerPipeline(const uint8_t id, const CameraConfig& camConfig)
+std::string gstreamerPipeline(const CameraConfig& camConfig)
 {
     std::string imageType = camConfig.mColour ? "BGR" : "GRAY8";
     char text[512];
     memset(text, '\0', 512);
     sprintf(text, "nvarguscamerasrc sensor-id=%u sensor-mode=%u ! video/x-raw(memory:NVMM), format=(string)NV12, framerate=(fraction)%u/1 ! "
                   "nvvidconv flip-method=%d ! video/x-raw, width=%d, height=%d, format=(string)BGRx ! videoconvert ! video/x-raw, "
-                  "format=(string)%s ! appsink", id, camConfig.mMode, camConfig.mFramerate, camConfig.mFlip, camConfig.mImageSize.width, 
+                  "format=(string)%s ! appsink", camConfig.mID, camConfig.mMode, camConfig.mFramerate, camConfig.mFlip, camConfig.mImageSize.width, 
                   camConfig.mImageSize.height, imageType.c_str());
 #ifdef LOG
     printf("%s\n", text);
@@ -47,10 +46,10 @@ std::string gstreamerPipeline(const uint8_t id, const CameraConfig& camConfig)
 } /* end of the anonymous namespace */
 
 CSI_Camera::CSI_Camera()
-: ICameraTalker(),
+: ICameraTalker<CameraConfig>(),
   GenericThread<CSI_Camera>(),
-  mID(0), 
-  mImgSize(), 
+  mID(0),
+  mImgSize(),
   mColour(true),
   mCapture()
 {
@@ -61,18 +60,18 @@ CSI_Camera::~CSI_Camera()
 	stopCamera();
 }
 
-bool CSI_Camera::startCamera(const CameraConfig& camConfig, const std::vector<uint8_t>& ids)
+bool CSI_Camera::startCamera(const CameraConfig& camConfig)
 {
     if (isInitialised())
     {
         stopCamera();
     }
+	mID = camConfig.mID;
     mImgSize = camConfig.mImageSize;
     mColour = camConfig.mColour;
-	mID = ids[0];
     if (camConfig.mOfflineImages.empty())
     {
-	    mCapture.open(gstreamerPipeline(mID, camConfig), cv::CAP_GSTREAMER);
+	    mCapture.open(gstreamerPipeline(camConfig), cv::CAP_GSTREAMER);
     }
     else
     {

@@ -35,11 +35,11 @@
  *
  * @note this class was tested with IMX219-83 camera.
  */
-class CSI_Camera final : public ICameraTalker,
+class CSI_Camera final : public ICameraTalker<CameraConfig>,
                          protected GenericThread<CSI_Camera>
 {
-    /* Relax the access control to baseclass which is inherited as protected. GenericThread is inherited as protected, because
-     * ICameraTalker controls the camera and starting/stopping threads. */
+    /* Relax the access control to baseclass which is inherited as protected. GenericThread is inherited as protected,
+     * because ICameraTalker controls the camera and starting/stopping threads. */
     friend class GenericThread<CSI_Camera>;
 
 public:
@@ -62,11 +62,10 @@ public:
 
     /**
      * Starts CSI camera with provided configuration.
-     *  @param camConfig the configuration parameters for the camera.
-     *  @param ids the id of the camera as the first element in the list.
-     *  @return true if the both the camera and insternal thread were started correctly.
+     *  @param camConfig Configuration parameters for the camera.
+     *  @return true if the camera and internal thread were started correctly.
      */
-    bool startCamera(const CameraConfig& camConfig, const std::vector<uint8_t>& ids) override;
+    bool startCamera(const CameraConfig& camConfig) override;
 
     /**
      * Stops the camera by stopping the internal thread and releasing the camera itself.

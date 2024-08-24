@@ -61,7 +61,7 @@ void scaleCameraMatrix(const cv::Size& imgSize, const cv::Size& maxSize, cv::Mat
 
 CSI_StereoCamera::CSI_StereoCamera(const cv::Size& imageSize)
 : GenericListener<CameraData>(), 
-  ICameraTalker(),
+  ICameraTalker<CameraConfig, CameraConfig>(),
   GenericThread<CSI_StereoCamera>(),
   mImageSize(imageSize),
   mRequestedRect(false), 
@@ -88,9 +88,9 @@ CSI_StereoCamera::~CSI_StereoCamera()
     stopCamera();
 }
 
-bool CSI_StereoCamera::startCamera(const CameraConfig& camConfig, const std::vector<uint8_t>& ids)
+bool CSI_StereoCamera::startCamera(const CameraConfig& lCamConfigs, const CameraConfig& rCamConfigs)
 {
-    bool retVal = (ids.size() >= 2 && camConfig.mImageSize == mImageSize);
+    bool retVal = (lCamConfigs.mImageSize == mImageSize && rCamConfigs.mImageSize == mImageSize);
     if (retVal)
     {
         if (isRunning())
@@ -98,12 +98,12 @@ bool CSI_StereoCamera::startCamera(const CameraConfig& camConfig, const std::vec
             stopCamera();
         }
 
-        retVal = mLCam.startCamera(camConfig, {ids[0]})
-               & mRCam.startCamera(camConfig, {ids[1]});
+        retVal = mLCam.startCamera(lCamConfigs)
+               & mRCam.startCamera(rCamConfigs);
 
         if (retVal)
         {
-            mRequestedRect = camConfig.mRectify;
+            mRequestedRect = lCamConfigs.mRectify & rCamConfigs.mRectify;
             retVal = startThread();
 
             if (!retVal)
@@ -113,10 +113,10 @@ bool CSI_StereoCamera::startCamera(const CameraConfig& camConfig, const std::vec
             }
             else
             {
-                mCamDatas.mID = ids;
+                mCamDatas.mID = {lCamConfigs.mID, rCamConfigs.mID};
                 mCamDatas.mTimestamp = {0.0, 0.0};
-                mCamDatas.mImage = {cv::cuda::HostMem(mImageSize, camConfig.mColour ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED),
-                                    cv::cuda::HostMem(mImageSize, camConfig.mColour ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED)};
+                mCamDatas.mImage = {cv::cuda::HostMem(mImageSize, lCamConfigs.mColour ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED),
+                                    cv::cuda::HostMem(mImageSize, rCamConfigs.mColour ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED)};
 
                 mLCam.registerTo(static_cast<GenericListener<CameraData>*>(this));
                 mRCam.registerTo(static_cast<GenericListener<CameraData>*>(this));

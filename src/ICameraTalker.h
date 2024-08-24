@@ -26,6 +26,7 @@
 #include "CameraConfig.h"
 #include "CameraData.h"
 
+template<typename... Args>
 class ICameraTalker : public GenericTalker<CameraData>
 {
 public:
@@ -34,13 +35,15 @@ public:
      */
     virtual ~ICameraTalker() = default;
 
+    // Enforces that all Args are of the CameraConfig type
+    static_assert((std::is_same_v<Args, CameraConfig> && ...), "All arguments must be of CameraConfig type");
+
     /**
-     * Starts the camera. A vector of camera ids is required for a multi-camera systems.
-     *  @param camConfig the configuration parameters for the camera.
-     *  @param ids the list of camera ids.
-     *	@return true if both cameras have started correctly.
+     * Starts the camera(s).
+     *  @param camConfig a camera configuration parameters, one per camera.
+     *	@return true if all cameras have started correctly.
      */
-    virtual bool startCamera(const CameraConfig& camConfig, const std::vector<uint8_t>& ids) = 0;
+    virtual bool startCamera(const Args&... camConfig) = 0;
 
     /**
      * Stops the camera.

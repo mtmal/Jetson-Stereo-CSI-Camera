@@ -298,11 +298,12 @@ void runStereo(CameraConfig& camConfig)
     /* Custom listener for stereo camera. */
     MyListener myListener(camConfig.mImageSize, -1, &stereo);
 
-    camConfig.mRectify = true;
+    CameraConfig rCamConfig = camConfig;
+    rCamConfig.mID = 1;
     static_cast<GenericTalker<CameraData>&>(stereo).registerTo(&myListener);
 
     stereo.loadCalibration("./config");
-    if (stereo.startCamera(camConfig, {0, 1}))
+    if (stereo.startCamera(camConfig, rCamConfig))
     {
 		cv::namedWindow("Left CSI Camera", cv::WINDOW_AUTOSIZE);
 		cv::namedWindow("Right CSI Camera", cv::WINDOW_AUTOSIZE);
@@ -346,10 +347,9 @@ void runStereo(CameraConfig& camConfig)
 
 /**
  * Runs the application.
- *  @param single ID of a single camera to start, or negative for stereo camera.
  *  @param[in,out] camConfig the configuration parameters for the camera.
  */
-void runMono(const int single, CameraConfig& camConfig)
+void runMono(CameraConfig& camConfig)
 {
     /* Flag to pause processing images. */
     bool pause = false;
@@ -360,12 +360,11 @@ void runMono(const int single, CameraConfig& camConfig)
     /* Image. */
     cv::Mat img(camConfig.mImageSize, CV_8UC1);
     /* Custom listener for camera. */
-    MyListener myListener(camConfig.mImageSize, single, nullptr);
+    MyListener myListener(camConfig.mImageSize, static_cast<int>(camConfig.mID), nullptr);
 
-    camConfig.mColour = true;
     mono.registerTo(&myListener);
 
-    if (mono.startCamera(camConfig, {static_cast<uint8_t>(single)}))
+    if (mono.startCamera(camConfig))
     {
 		cv::namedWindow("CSI Camera", cv::WINDOW_AUTOSIZE);
 
@@ -402,7 +401,7 @@ void runMono(const int single, CameraConfig& camConfig)
 int main(int argc, char** argv)
 {
     /** Camera configuration parameters */
-    CameraConfig camConfig = {cv::Size(640, 480), 20, 0, 2, false, false, ""};
+    CameraConfig camConfig = {cv::Size(640, 480), 20, 0, 0, 2, false, false, ""};
     /** Indicates if a single camera should be started instead of stereo. */
     int single = -1;
 
@@ -440,11 +439,14 @@ int main(int argc, char** argv)
     }
     if (single < 0)
     {
+        camConfig.mRectify = true;
         runStereo(camConfig);
     }
     else
     {
-        runMono(single, camConfig);
+        camConfig.mID = static_cast<uint8_t>(single);
+        camConfig.mColour = true;
+        runMono(camConfig);
     }
     return 0;
 }
