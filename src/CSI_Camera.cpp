@@ -20,6 +20,7 @@
 // SOFTWARE.
 ////////////////////////////////////////////////////////////////////////////////
 
+#include <opencv2/imgproc.hpp>
 #include "CSI_Camera.h"
 
 namespace
@@ -51,7 +52,8 @@ CSI_Camera::CSI_Camera()
   mID(0),
   mImgSize(),
   mColour(true),
-  mCapture()
+  mCapture(),
+  mNumberOfFrames()
 {
 }
 
@@ -75,7 +77,11 @@ bool CSI_Camera::startCamera(const CameraConfig& camConfig)
     }
     else
     {
-        mCapture.open(camConfig.mOfflineImages, cv::CAP_IMAGES);
+        if (mCapture.open(camConfig.mOfflineImages, cv::CAP_IMAGES))
+        {
+            printf("Succcessfully opened: %s \n", camConfig.mOfflineImages.c_str());
+            mNumberOfFrames = static_cast<int>(mCapture.get(cv::CAP_PROP_FRAME_COUNT));
+        }
     }
     return (isInitialised() && startThread());
 }
@@ -126,15 +132,50 @@ void* CSI_Camera::threadBody()
 {
     CameraData camData;
     camData.mID.push_back(getId());
-    camData.mTimestamp.push_back(0.0);
+    camData.mTimestamp.push_back(-1.0);
     camData.mImage.push_back(cv::cuda::HostMem(getSize(), getColour() ? CV_8UC3 : CV_8UC1, cv::cuda::HostMem::AllocType::SHARED));
     
-    while (isRunning())
+    // this routine is for when we read images from the actual camera
+    if (0 == mNumberOfFrames)
     {
-        if (mCapture.read(camData.mImage[0]))
+        while (isRunning())
         {
-            camData.mTimestamp[0] = mCapture.get(cv::CAP_PROP_POS_MSEC);
-            notifyListeners(camData);
+            if (mCapture.read(camData.mImage[0]))
+            {
+                camData.mTimestamp[0] = mCapture.get(cv::CAP_PROP_POS_MSEC);
+                notifyListeners(camData);           
+            }
+        }
+    }
+    // here when we read images from files
+    else
+    {
+        int numberOfFrames = 0;
+        cv::Mat tempImgCol;
+        cv::Mat tempImgGrey;
+        while (isRunning())
+        {
+            if (mCapture.read(tempImgCol))
+            {
+                camData.mTimestamp[0] = static_cast<double>(numberOfFrames);
+                // if we are loading images from files and we loaded the last one, reset counter to zero to loop again indefinitely.
+                if (++numberOfFrames == mNumberOfFrames)
+                {
+                    numberOfFrames = 0;
+                    mCapture.set(cv::CAP_PROP_POS_FRAMES, 0);
+                } 
+                if (!getColour() && tempImgCol.channels() == 3)
+                {
+                    // an image by default could be read as BGR. If this happens and we wanted greyscale images, we need to convert it.
+                    cv::cvtColor(tempImgCol, tempImgGrey, cv::COLOR_BGR2GRAY, 1);
+                    cv::resize(tempImgGrey, camData.mImage[0], getSize());
+                }
+                else
+                {
+                    cv::resize(tempImgCol, camData.mImage[0], getSize());
+                }
+                notifyListeners(camData);           
+            }
         }
     }
     return nullptr;

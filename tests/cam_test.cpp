@@ -20,6 +20,7 @@
 // SOFTWARE.
 ////////////////////////////////////////////////////////////////////////////////
 
+#include <filesystem>
 #include <opencv2/highgui.hpp>
 #include <opencv2/cudastereo.hpp>
 #include <opencv2/ximgproc/disparity_filter.hpp>
@@ -61,6 +62,8 @@ void printHelp(const char* name)
 	printf("    -f, --framerate -> sets the camera framerate in Hz, default: 20 \n");
 	printf("    -c, --cols      -> sets the number of columns (width) in resized image, default: 640 \n");
 	printf("    -r, --rows      -> sets the number of rows (height) in resized image, default: 480 \n");
+	printf("    -o, --offline   -> sets the path to a folder for images to be loaded from files as opposed to starting a camera. For stereo camera,"
+                    " there needs to be two subfolders called left and right with images in format %%04d.png. No subfolders for monocular camera. \n");
 	printf("\nExample: %s -c 320 -r 240 \n\n", name);
 	printf("NOTE: if the application that uses nvargus to control cameras was killed without releasing the cameras,"
 			" execute the following:\n\n"
@@ -216,14 +219,11 @@ public:
 
     void update(const CameraData& camData) override
     {
-        int64 time2;
-        int64 time1;
-
         if (camData.mID.size() > 1)
         {
-            time1 = cv::getTickCount();
+            int64 time1 = cv::getTickCount();
             mStereoCam->computeDisp(useFiltered, camData.mImage[0], camData.mImage[1], mDisparity);
-            time2 = cv::getTickCount();
+            int64 time2 = cv::getTickCount();
             pthread_mutex_lock(&mLock);
             mTimestamp = (camData.mTimestamp[0] + camData.mTimestamp[1]) * 0.5;
             mLeft = camData.mImage[0].createMatHeader();
@@ -301,6 +301,12 @@ void runStereo(CameraConfig& camConfig)
     CameraConfig rCamConfig = camConfig;
     rCamConfig.mID = 1;
     static_cast<GenericTalker<CameraData>&>(stereo).registerTo(&myListener);
+
+    if (!camConfig.mOfflineImages.empty())
+    {
+        camConfig.mOfflineImages.append("/left/%04d.png");
+        rCamConfig.mOfflineImages.append("/right/%04d.png");
+    }
 
     stereo.loadCalibration("./config");
     if (stereo.startCamera(camConfig, rCamConfig))
@@ -432,6 +438,17 @@ int main(int argc, char** argv)
         	printHelp(argv[0]);
         	return 0;
         }
+        else if ((0 == strcmp(argv[i], "--offline")) || (0 == strcmp(argv[i], "-o")))
+        {
+            if (std::filesystem::is_directory(argv[i + 1]))
+            {
+                camConfig.mOfflineImages = argv[i + 1];
+            }
+            else
+            {
+                printf("Path: %s does not point to a valid directory. Skipping. \n", argv[i + 1]);
+            }
+        }
 		else
 		{
 			/* nothing to do in here */
@@ -446,6 +463,10 @@ int main(int argc, char** argv)
     {
         camConfig.mID = static_cast<uint8_t>(single);
         camConfig.mColour = true;
+        if (!camConfig.mOfflineImages.empty())
+        {
+            camConfig.mOfflineImages.append("/%04d.png");
+        }
         runMono(camConfig);
     }
     return 0;

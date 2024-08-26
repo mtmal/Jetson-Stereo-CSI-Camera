@@ -132,4 +132,6 @@ private:
     bool mColour;
     /** OpenCV wrapper which allows communication with CSI camera. */
     cv::VideoCapture mCapture;
+    /** Number of frames for offline image processing (i.e. loading imges from files). */
+    int mNumberOfFrames;
 };

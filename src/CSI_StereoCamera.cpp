@@ -20,6 +20,7 @@
 // SOFTWARE.
 ////////////////////////////////////////////////////////////////////////////////
 
+#include <future>
 #include <unistd.h>
 #include <opencv2/cudaarithm.hpp>
 #include <opencv2/cudafilters.hpp>
@@ -97,9 +98,11 @@ bool CSI_StereoCamera::startCamera(const CameraConfig& lCamConfigs, const Camera
         {
             stopCamera();
         }
-
-        retVal = mLCam.startCamera(lCamConfigs)
-               & mRCam.startCamera(rCamConfigs);
+        // use async to start both cameras at the same time to aim for their threads to be synchronised.
+        // needed when loading multiple images from files.
+        std::future<bool> future1 = std::async(std::launch::async, &CSI_Camera::startCamera, &mLCam, lCamConfigs);
+        std::future<bool> future2 = std::async(std::launch::async, &CSI_Camera::startCamera, &mRCam, rCamConfigs);
+        retVal = future1.get() & future2.get();
 
         if (retVal)
         {
@@ -301,8 +304,8 @@ void* CSI_StereoCamera::threadBody()
         if (0 == sem_wait(&mSemaphore))
         {
             pthread_mutex_lock(&mMutex);
-            if (mCamDatas.mTimestamp[0] > 0 && 
-                mCamDatas.mTimestamp[1] > 0 && 
+            if (mCamDatas.mTimestamp[0] >= 0 && 
+                mCamDatas.mTimestamp[1] >= 0 && 
                 ftc.checkTimes(mCamDatas.mTimestamp[0], mCamDatas.mTimestamp[1]))
             {
                 if (!mRequestedRect)
