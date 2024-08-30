@@ -42,7 +42,7 @@ namespace
  * TODO: fix what is explained in the note above.
  *  @param imgSize the size of images which will be acquired from the cameras.
  *  @param maxSize the max size of images for which the calibration was done.
- *  @param[in,out] camMat camera matrix which parameters are being scaled.
+ *  @param[in,out] camMat camera matrix for scaling
  */
 void scaleCameraMatrix(const cv::Size& imgSize, const cv::Size& maxSize, cv::Mat& camMat)
 {
@@ -54,9 +54,27 @@ void scaleCameraMatrix(const cv::Size& imgSize, const cv::Size& maxSize, cv::Mat
     /* In case the new camera matrix is passed, additional parameters need to be resized. */
     if (camMat.cols == 4)
     {
-        camMat.at<double>(0, 3) *= static_cast<double>(imgSize.width)   / static_cast<double>(maxSize.width);
-        camMat.at<double>(1, 3) *= static_cast<double>(imgSize.height)  / static_cast<double>(maxSize.height);
+        camMat.at<double>(0, 3) *= static_cast<double>(imgSize.width)  / static_cast<double>(maxSize.width);
+        camMat.at<double>(1, 3) *= static_cast<double>(imgSize.height) / static_cast<double>(maxSize.height);
     }
+}
+
+/**
+ * Scales the stereo camera parameters.
+ * @note this does not take into account different mode! If different mode is used
+ * than for which calibration was done, image centre needs to be shifted first to
+ * then all parameters should be scaled as currently done.
+ * TODO: fix what is explained in the note above.
+ *  @param imgSize the size of images which will be acquired from the cameras.
+ *  @param maxSize the max size of images for which the calibration was done.
+ *  @param[in,out] params parameters for scaling
+ */
+void scaleCameraParams(const cv::Size& imgSize, const cv::Size& maxSize, CSI_StereoCamera::StereoCamParameters& params)
+{
+    params.mCX *= static_cast<double>(imgSize.width)  / static_cast<double>(maxSize.width);
+    params.mCY *= static_cast<double>(imgSize.height) / static_cast<double>(maxSize.height);
+    params.mFX *= static_cast<double>(imgSize.width)  / static_cast<double>(maxSize.width);
+    params.mFY *= static_cast<double>(imgSize.height) / static_cast<double>(maxSize.height);
 }
 } /* end of the anonymous namespace */
 
@@ -102,7 +120,7 @@ bool CSI_StereoCamera::startCamera(const CameraConfig& lCamConfigs, const Camera
         // needed when loading multiple images from files.
         std::future<bool> future1 = std::async(std::launch::async, &CSI_Camera::startCamera, &mLCam, lCamConfigs);
         std::future<bool> future2 = std::async(std::launch::async, &CSI_Camera::startCamera, &mRCam, rCamConfigs);
-        retVal = future1.get() & future2.get();
+        retVal = future1.get() && future2.get();
 
         if (retVal)
         {
@@ -193,6 +211,13 @@ bool CSI_StereoCamera::loadCalibration(const std::string& folder)
                 fs.release();
                 scaleCameraMatrix(mImageSize, maxSize, P1);
                 scaleCameraMatrix(mImageSize, maxSize, P2);
+                
+                mCamParams.mB  = T.at<double>(0);
+                mCamParams.mCX = Q.at<double>(0, 3);
+                mCamParams.mCY = Q.at<double>(1, 3);
+                mCamParams.mFX = Q.at<double>(2, 3);
+                mCamParams.mFY = mCamParams.mFX;
+                scaleCameraParams(mImageSize, maxSize, mCamParams);
 
                 initUndistortRectifyMap(lCamMat, lDist, R1, P1, mImageSize, CV_32FC1, mRectMaps[0][0], mRectMaps[0][1]);
                 initUndistortRectifyMap(rCamMat, rDist, R2, P2, mImageSize, CV_32FC1, mRectMaps[1][0], mRectMaps[1][1]);

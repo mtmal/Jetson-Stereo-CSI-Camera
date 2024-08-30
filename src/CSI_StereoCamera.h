@@ -74,6 +74,25 @@ class CSI_StereoCamera final: public GenericListener<CameraData>,
     friend class GenericThread<CSI_StereoCamera>;
 
 public:
+    /**
+     * A structure to hold calibrated parameters needed to re-prject image to 3D space.
+     * As images could be scaled differently on each axis, it may lead to fx != fy,
+     * which could result in default OpenCV reprojectImageTo3D function to fail.
+     */
+    struct StereoCamParameters
+    {
+        /** Camera baseline - distance between left and right cameras in units in which they were calibrated. */
+        double mB;
+        /** The calibrated and scaled centre of image on X axis in pixels. */
+        double mCX;
+        /** The calibrated and scaled centre of image on Y axis in pixels. */
+        double mCY;
+        /** The calibrated and scaled focal length image on X axis in pixels. */
+        double mFX;
+        /** The calibrated and scaled focal length image on Y axis in pixels. */
+        double mFY;
+    };
+
 	/**
 	 * Basic constructor which initialises all variables.
 	 *  @param imageSize the size of images for buffers allocation.
@@ -162,6 +181,14 @@ public:
      */
     void* threadBody();
 
+    /**
+     *  @return stereo camer parameters scaled to match the requested image size.
+     */
+    inline const StereoCamParameters& getStereoParams() const
+    {
+        return mCamParams;
+    }
+
 private:
     /** The size of images. */
     cv::Size mImageSize;
@@ -193,4 +220,6 @@ private:
     cv::cuda::HostMem mRectMaps[2][2];
     /** Shared buffers for left and right camera data. */
     CameraData mCamDatas;
+    /** A structure for stereo camera parameters. */
+    StereoCamParameters mCamParams;
 };

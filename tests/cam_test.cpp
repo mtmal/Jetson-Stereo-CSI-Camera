@@ -174,7 +174,7 @@ void createSlides(CSI_StereoCamera& stereoCam)
     cv::createTrackbar("Prefilter Size", "Disparity", &preFilterSize, 255, onTrackbar, &stereoCam);
     cv::setTrackbarMin("Prefilter Size", "Disparity", 5);
 
-    cv::createTrackbar("Prefilter Cap", "Disparity", &preFilterCap, 63, onTrackbar, &stereoCam);
+    cv::createTrackbar("Prefilter Cap", "Disparity", &preFilterCap, 3, onTrackbar, &stereoCam);
     cv::setTrackbarMin("Prefilter Cap", "Disparity", 1);
 
     cv::createTrackbar("Block Size", "Disparity", &blockSize, 51, onTrackbar, &stereoCam);
@@ -194,7 +194,26 @@ void createSlides(CSI_StereoCamera& stereoCam)
 
     cv::createTrackbar("Filter Lambda", "Disparity", &lambda, 1000, onTrackbar, &stereoCam);
     cv::setTrackbarMin("Filter Lambda", "Disparity", 500);
-    cv::createTrackbar("Filter Sigma Colour", "Disparity", &sigma, 3000, onTrackbar, &stereoCam);
+    cv::createTrackbar("Filter Sigma Colour", "Disparity", &sigma, 1000, onTrackbar, &stereoCam);
+}
+
+void calculateDistance(const CSI_StereoCamera::StereoCamParameters& camParams, const cv::Mat& disparity,
+                         int x1, int y1, int x2, int y2)
+{
+    double invDisp = 1.0 / static_cast<double>(disparity.at<uint8_t>(y1, x1));
+    double X1 = -camParams.mB * (static_cast<double>(x1) - camParams.mCX) * invDisp;
+    double Y1 = -camParams.mB * (static_cast<double>(y1) - camParams.mCY) * invDisp;
+    double Z1 = -camParams.mB * (camParams.mFX + camParams.mFY) * 0.5 * invDisp;
+
+    double X2 = -camParams.mB * (static_cast<double>(x2) - camParams.mCX) * invDisp;
+    double Y2 = -camParams.mB * (static_cast<double>(y2) - camParams.mCY) * invDisp;
+    double Z2 = -camParams.mB * (camParams.mFX + camParams.mFY) * 0.5 * invDisp;
+
+    double distance =  std::sqrt((X1 - X2) * (X1 - X2) + (Y1 - Y2) * (Y1 - Y2) + (Z1 - Z2) * (Z1 - Z2));
+
+    printf("X1=%.4f, Y1=%.4f, Z1=%.4f \n", X1, Y1, Z1);
+    printf("X2=%.4f, Y2=%.4f, Z2=%.4f \n", X2, Y2, Z2);
+    printf("distance=%.4f mm \n", distance * 1000);
 }
 
 class MyListener : public GenericListener<CameraData>
@@ -308,6 +327,7 @@ void runStereo(CameraConfig& camConfig)
         rCamConfig.mOfflineImages.append("/right/%04d.png");
     }
 
+
     stereo.loadCalibration("./config");
     if (stereo.startCamera(camConfig, rCamConfig))
     {
@@ -326,6 +346,7 @@ void runStereo(CameraConfig& camConfig)
             cv::imshow("Right CSI Camera", right);
             cv::imshow("Disparity", disparity);
 			/* when space bar is pressed, pause processing images and save current rectified images with disparity map to files. */
+            // calculateDistance(stereo.getStereoParams(), disparity, 172, 131, 180, 23); // for image 1
 			if (key == 32)
 			{
 				pause = !pause;
