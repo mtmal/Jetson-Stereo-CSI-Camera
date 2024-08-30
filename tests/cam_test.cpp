@@ -166,7 +166,8 @@ void createSlides(CSI_StereoCamera& stereoCam)
     speckleRange  = stereoCam.getStereoBM()->getSpeckleRange();
 
     lambda		  = static_cast<int>(stereoCam.getDispFilter()->getLambda() / 10);
-    sigma         = static_cast<int>(stereoCam.getDispFilter()->getSigmaColor() * 1000.0);
+    // sigma         = static_cast<int>(stereoCam.getDispFilter()->getSigmaColor() * 1000.0);
+    sigma         = 1000;
 
     cv::createTrackbar("Filter Disparity", "Disparity", &filtered, 1, onTrackbar, &stereoCam);
 
@@ -194,7 +195,7 @@ void createSlides(CSI_StereoCamera& stereoCam)
 
     cv::createTrackbar("Filter Lambda", "Disparity", &lambda, 1000, onTrackbar, &stereoCam);
     cv::setTrackbarMin("Filter Lambda", "Disparity", 500);
-    cv::createTrackbar("Filter Sigma Colour", "Disparity", &sigma, 1000, onTrackbar, &stereoCam);
+    cv::createTrackbar("Filter Sigma Colour", "Disparity", &sigma, 3000, onTrackbar, &stereoCam);
 }
 
 void calculateDistance(const CSI_StereoCamera::StereoCamParameters& camParams, const cv::Mat& disparity,
@@ -346,7 +347,8 @@ void runStereo(CameraConfig& camConfig)
             cv::imshow("Right CSI Camera", right);
             cv::imshow("Disparity", disparity);
 			/* when space bar is pressed, pause processing images and save current rectified images with disparity map to files. */
-            // calculateDistance(stereo.getStereoParams(), disparity, 172, 131, 180, 23); // for image 1
+            // calculateDistance(stereo.getStereoParams(), disparity, 172, 131, 180, 230); // phone width for image 1
+            // calculateDistance(stereo.getStereoParams(), disparity, 186, 100, 186, 190); // phone width for image 2
 			if (key == 32)
 			{
 				pause = !pause;
