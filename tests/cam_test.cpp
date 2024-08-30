@@ -156,7 +156,8 @@ void createSlides(CSI_StereoCamera& stereoCam)
 {
 	preFilterType = stereoCam.getStereoBM()->getPreFilterType();
     preFilterSize = stereoCam.getStereoBM()->getPreFilterSize();
-    preFilterCap  = stereoCam.getStereoBM()->getPreFilterCap();
+    // preFilterCap  = stereoCam.getStereoBM()->getPreFilterCap();
+    preFilterCap  = 3;
     blockSize     = stereoCam.getStereoBM()->getBlockSize();
     minDisparity  = stereoCam.getStereoBM()->getMinDisparity() / 16;
     numDisparity  = stereoCam.getStereoBM()->getNumDisparities() / 16;
@@ -167,7 +168,7 @@ void createSlides(CSI_StereoCamera& stereoCam)
 
     lambda		  = static_cast<int>(stereoCam.getDispFilter()->getLambda() / 10);
     // sigma         = static_cast<int>(stereoCam.getDispFilter()->getSigmaColor() * 1000.0);
-    sigma         = 1000;
+    sigma         = 2000;
 
     cv::createTrackbar("Filter Disparity", "Disparity", &filtered, 1, onTrackbar, &stereoCam);
 
@@ -175,7 +176,7 @@ void createSlides(CSI_StereoCamera& stereoCam)
     cv::createTrackbar("Prefilter Size", "Disparity", &preFilterSize, 255, onTrackbar, &stereoCam);
     cv::setTrackbarMin("Prefilter Size", "Disparity", 5);
 
-    cv::createTrackbar("Prefilter Cap", "Disparity", &preFilterCap, 3, onTrackbar, &stereoCam);
+    cv::createTrackbar("Prefilter Cap", "Disparity", &preFilterCap, 63, onTrackbar, &stereoCam);
     cv::setTrackbarMin("Prefilter Cap", "Disparity", 1);
 
     cv::createTrackbar("Block Size", "Disparity", &blockSize, 51, onTrackbar, &stereoCam);
@@ -244,6 +245,11 @@ public:
             int64 time1 = cv::getTickCount();
             mStereoCam->computeDisp(useFiltered, camData.mImage[0], camData.mImage[1], mDisparity);
             int64 time2 = cv::getTickCount();
+			/* when space bar is pressed, pause processing images and save current rectified images with disparity map to files. */
+            // calculateDistance(mStereoCam->getStereoParams(), mDisparity, 172, 129, 180, 233); // phone width for image 1: 75 mm
+            // calculateDistance(mStereoCam->getStereoParams(), mDisparity, 230, 75, 300, 52); // glasses width for image 1: 135 mm
+            // calculateDistance(mStereoCam->getStereoParams(), mDisparity, 186, 100, 186, 190); // phone width for image 2: 75 mm
+            // calculateDistance(mStereoCam->getStereoParams(), mDisparity, 236, 73, 308, 52); // glasses width for image 2: 135 mm
             pthread_mutex_lock(&mLock);
             mTimestamp = (camData.mTimestamp[0] + camData.mTimestamp[1]) * 0.5;
             mLeft = camData.mImage[0].createMatHeader();
@@ -346,9 +352,6 @@ void runStereo(CameraConfig& camConfig)
             cv::imshow("Left CSI Camera", left);
             cv::imshow("Right CSI Camera", right);
             cv::imshow("Disparity", disparity);
-			/* when space bar is pressed, pause processing images and save current rectified images with disparity map to files. */
-            // calculateDistance(stereo.getStereoParams(), disparity, 172, 131, 180, 230); // phone width for image 1
-            // calculateDistance(stereo.getStereoParams(), disparity, 186, 100, 186, 190); // phone width for image 2
 			if (key == 32)
 			{
 				pause = !pause;
